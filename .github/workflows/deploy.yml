@@ -26,6 +26,15 @@ jobs:
           docker push ghcr.io/${{ github.repository }}:${{ github.sha }}
           docker push ghcr.io/${{ github.repository }}:latest
 
+      - name: Copy compose file to server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          source: docker-compose.yml
+          target: /opt/evcharge
+
       - name: Deploy to server
         uses: appleboy/ssh-action@v1.0.3
         with:
@@ -33,41 +42,8 @@ jobs:
           username: ${{ secrets.SERVER_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            mkdir -p /opt/evcharge
-            cat > /opt/evcharge/docker-compose.yml << 'COMPOSE'
-services:
-  app:
-    image: ghcr.io/${{ github.repository }}:latest
-    ports:
-      - "8080:8080"
-    environment:
-      - SPRING_PROFILES_ACTIVE=prod
-      - DB_PASSWORD=${DB_PASSWORD}
-    depends_on:
-      db:
-        condition: service_healthy
-    restart: unless-stopped
-
-  db:
-    image: mysql:8.0
-    environment:
-      - MYSQL_DATABASE=evcharge
-      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD}
-    ports:
-      - "3306:3306"
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-    restart: unless-stopped
-
-volumes:
-  mysql_data:
-COMPOSE
             export DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            cd /opt/evcharge
             docker compose pull app
             docker compose up -d
             docker image prune -f

@@ -21,6 +21,11 @@ public class BusinessException extends RuntimeException {
         this.code = code;
     }
 
+    /** 从预定义错误码构造。 */
+    public BusinessException(ErrorCode errorCode) {
+        this(errorCode.getCode(), errorCode.getMessage());
+    }
+
     /** 简写形式，错误码固定为 400。 */
     public BusinessException(String message) {
         this(400, message);

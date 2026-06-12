@@ -9,7 +9,7 @@
 | Java | 21 |
 | Spring Boot | 4.1.0 |
 | 构建工具 | Maven |
-| 数据库 | MySQL（待接入）|
+| 数据库 | MySQL|
 | ORM | MyBatis-Plus（待接入）|
 
 ### 已集成依赖
@@ -65,6 +65,26 @@ src/main/java/bupt/evchargebackend/
    curl http://localhost:8080/hello
    ```
    返回 `{"code":200,"msg":"success","data":["Hello World!","你好，世界！"]}`
+
+## 多环境配置
+
+项目提供三套配置文件，通过 Spring Profile 切换：
+
+| 文件 | 用途 | 启动方式 |
+|------|------|---------|
+| `application.yml` | 公共配置（端口、时区、日期格式） | 自动加载 |
+| `application-dev.yml` | 本地开发（打印 SQL，密码默认 root） | `--spring.profiles.active=dev` |
+| `application-prod.yml` | 服务器部署（不打印 SQL，密码通过环境变量 `DB_PASSWORD` 传入） | `--spring.profiles.active=prod` |
+
+```bash
+# 本地开发
+./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
+
+# 服务器部署（先 export DB_PASSWORD=xxx）
+./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
+```
+
+IDEA 中可以在右上角运行配置的 Active profiles 栏直接填写 `dev` 或 `prod`。
 
 ## 开发规范
 

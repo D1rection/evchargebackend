@@ -1,4 +1,4 @@
-package bupt.evchargebackend.controller;
+package bupt.evchargebackend.controller.hello;
 
 import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.hello.HelloService;

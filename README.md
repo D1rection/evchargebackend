@@ -140,13 +140,23 @@ fix(pricing): correct peak hour rate calculation precision
 
 ```java
 /**
- * 充电订单表。
+ * 统一 API 响应体包装。
  *
- * @author Deng Chao
- * @since 2026-06-14
+ * @author XXX
+ * @since 2026-06-12
  */
-public class ChargingOrder { ... }
+public class Result<T> { ... }
 ```
+
+### 配置约定
+
+尽量不修改以下文件，如需修改请讨论后确认：
+
+- `application.yml` / `application-dev.yml` / `application-prod.yml`
+- `.github/workflows/deploy.yml`
+- `Dockerfile` / `docker-compose.yml` / `docker-compose.prod.yml`
+- `.gitignore`
+- `pom.xml`（增删依赖时需确认）
 
 ### 推送
 

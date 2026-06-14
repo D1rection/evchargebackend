@@ -5,6 +5,7 @@ import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.service.schedule.event.PileRecoveredEvent;
 import bupt.evchargebackend.service.schedule.event.PileReleasedEvent;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -36,6 +37,7 @@ public class SchedulingEngine {
     private final Queue<ChargingOrder> slowFaultQueue = new LinkedList<>();
     private final Map<String, Deque<ChargingOrder>> pileQueues = new ConcurrentHashMap<>();
 
+    @Autowired
     public SchedulingEngine(ScheduleStrategy scheduleStrategy) {
         this(scheduleStrategy, DEFAULT_MAX_QUEUE);
     }

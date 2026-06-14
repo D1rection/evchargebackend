@@ -103,12 +103,24 @@ CREATE TABLE fault_record (
     session_id   VARCHAR(36)  COMMENT '可为空',
     order_id     VARCHAR(36)  COMMENT '可为空',
     fault_time   DATETIME     NOT NULL,
+    fault_code   INT          COMMENT '故障码: 101过流/102过温/103通信中断/404离线',
     recover_time DATETIME,
     fault_status VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE' COMMENT 'ACTIVE / RECOVERED',
+    resolve_code INT          COMMENT '处置码: 200复位/201换硬件/202换通信/203重启/204其他',
+    resolver     VARCHAR(50)  COMMENT '处置人',
+    remark       TEXT         COMMENT '处置备注',
     description  TEXT,
     created_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (pile_id) REFERENCES charging_pile(pile_id),
     FOREIGN KEY (session_id) REFERENCES charging_session(session_id),
     FOREIGN KEY (order_id) REFERENCES charging_order(order_id)
+);
+
+CREATE TABLE station_config (
+    id                   INT         AUTO_INCREMENT PRIMARY KEY,
+    fast_count           INT         NOT NULL DEFAULT 0 COMMENT '快充桩数量',
+    slow_count           INT         NOT NULL DEFAULT 0 COMMENT '慢充桩数量',
+    waiting_spots_per_pile INT       NOT NULL DEFAULT 2 COMMENT '每桩等候车位',
+    updated_at           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

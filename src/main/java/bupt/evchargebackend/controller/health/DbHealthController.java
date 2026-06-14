@@ -1,4 +1,4 @@
-package bupt.evchargebackend.controller;
+package bupt.evchargebackend.controller.health;
 
 import bupt.evchargebackend.common.response.Result;
 import org.springframework.jdbc.core.JdbcTemplate;

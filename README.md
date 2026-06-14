@@ -9,17 +9,34 @@
 | Java | 21 |
 | Spring Boot | 4.1.0 |
 | 构建工具 | Maven |
-| 数据库 | MySQL|
-| ORM | MyBatis-Plus（待接入）|
+| 数据库 | MySQL 8.0 |
+| ORM | MyBatis-Plus 3.5.16 |
 
 ### 已集成依赖
 
 - **spring-boot-starter-webmvc** — Web MVC + Jackson 3 序列化
-- **spring-boot-starter-validation** — 参数校验（`@Valid`、`@NotNull`）
-- **lombok** — 编译期生成 getter/setter/构造器
-- **hutool-all** — Java 工具类库
+- **spring-boot-starter-validation** — 参数校验
+- **mybatis-plus-spring-boot4-starter** — MyBatis-Plus
+- **mysql-connector-j** — MySQL 驱动
+- **lombok** — getter/setter 生成
+- **hutool-all** — Java 工具类库（含 BCrypt 密码加密）
 - **jjwt (0.12.7)** — JWT 令牌创建与解析
 - **logback-spring.xml** — 日志按天滚动，保留 30 天
+
+### 数据库
+
+8 张表（`schema.sql`）：
+
+| 表 | 说明 |
+|----|------|
+| user_account | 用户/管理员账号 |
+| car | 车辆信息 |
+| charging_order | 充电订单 |
+| charging_session | 充电过程 |
+| bill | 账单 |
+| charging_pile | 充电桩 |
+| billing_rate_period | 分时电价 |
+| fault_record | 故障记录 |
 
 ## 项目结构
 
@@ -27,21 +44,33 @@
 src/main/java/bupt/evchargebackend/
 ├── EvchargebackendApplication.java   # 启动入口
 ├── common/
-│   ├── exception/
-│   │   ├── BusinessException.java    # 业务异常，携带错误码
-│   │   └── GlobalExceptionHandler.java # 全局异常处理（6 种异常类型）
-│   └── response/
-│       ├── Result.java               # 统一响应体 {code, msg, data}
-│       └── PageResult.java           # 分页包装 {list, total, pageNum, pageSize}
+│   ├── exception/                    # BusinessException、GlobalExceptionHandler、ErrorCode
+│   ├── jwt/                          # JwtUtil、JwtInterceptor（未启用）
+│   └── response/                     # Result、PageResult
 ├── config/
-│   └── CorsConfig.java               # CORS 跨域配置
+│   ├── CorsConfig.java               # CORS 跨域
+│   ├── MyBatisPlusConfig.java        # @MapperScan
+│   ├── TimeMetaObjectHandler.java    # 时间自动填充
+│   └── WebConfig.java                # 拦截器注册（注释）
 ├── controller/
-│   └── HelloController.java          # 健康检查
-└── service/
-    └── hello/
-        ├── HelloService.java         # 接口
-        └── impl/
-            └── HelloServiceImpl.java # 实现
+│   ├── health/DbHealthController.java
+│   └── hello/HelloController.java
+├── entity/
+│   ├── user/   UserAccount.java, Car.java, UserRole.java
+│   ├── charging/ ChargingOrder.java, ChargingSession.java, ...
+│   ├── pile/   ChargingPile.java, PileType.java, ...
+│   ├── bill/   Bill.java, PaymentStatus.java
+│   ├── pricing/ BillingRatePeriod.java, PeriodName.java
+│   └── fault/  FaultRecord.java, FaultStatus.java
+├── mapper/                           # 8 个 Mapper 接口
+├── service/
+│   └── hello/                        # 示例服务
+src/main/resources/
+├── application.yml                   # 公共配置
+├── application-dev.yml               # 本地开发
+├── application-prod.yml              # 服务器部署
+├── logback-spring.xml                # 日志配置
+└── schema.sql                        # 建表脚本
 ```
 
 ## 快速开始
@@ -49,42 +78,34 @@ src/main/java/bupt/evchargebackend/
 1. **确保 JDK 21 已安装**
    ```bash
    java -version
-   # 输出应为 openjdk version "21.0.x"
    ```
 
-2. **用 IntelliJ IDEA 打开项目**
-   - 项目根目录选择 `/evchargebackend`
-   - IDEA 自动识别 Maven 项目并同步依赖
+2. **启动 MySQL（本地或 Docker）**
+   ```bash
+   # Homebrew
+   brew install mysql && brew services start mysql
+   mysql -uroot -e "CREATE DATABASE evcharge DEFAULT CHARACTER SET utf8mb4;"
+   mysql -uroot evcharge < schema.sql
 
-3. **运行应用**
-   - 打开 `EvchargebackendApplication.java`
-   - 点击行号旁的绿色三角运行
+   # 或 Docker
+   docker run -d -e MYSQL_DATABASE=evcharge -e MYSQL_ROOT_PASSWORD=root -p 3306:3306 mysql:8.0
+   ```
+
+3. **IDEA 打开项目**，Maven 同步依赖，选择 `dev` profile 运行
 
 4. **验证**
    ```bash
    curl http://localhost:8080/hello
+   curl http://localhost:8080/db/health
    ```
-   返回 `{"code":200,"msg":"success","data":["Hello World!","你好，世界！"]}`
 
 ## 多环境配置
 
-项目提供三套配置文件，通过 Spring Profile 切换：
-
 | 文件 | 用途 | 启动方式 |
 |------|------|---------|
-| `application.yml` | 公共配置（端口、时区、日期格式） | 自动加载 |
-| `application-dev.yml` | 本地开发（打印 SQL，密码默认 root） | `--spring.profiles.active=dev` |
-| `application-prod.yml` | 服务器部署（不打印 SQL，密码通过环境变量 `DB_PASSWORD` 传入） | `--spring.profiles.active=prod` |
-
-```bash
-# 本地开发
-./mvnw spring-boot:run -Dspring-boot.run.profiles=dev
-
-# 服务器部署（先 export DB_PASSWORD=xxx）
-./mvnw spring-boot:run -Dspring-boot.run.profiles=prod
-```
-
-IDEA 中可以在右上角运行配置的 Active profiles 栏直接填写 `dev` 或 `prod`。
+| `application.yml` | 公共配置 | 自动加载 |
+| `application-dev.yml` | 本地开发（打印 SQL） | `--spring.profiles.active=dev` |
+| `application-prod.yml` | 服务器部署（Docker） | `--spring.profiles.active=prod` |
 
 ## 开发规范
 
@@ -92,17 +113,9 @@ IDEA 中可以在右上角运行配置的 Active profiles 栏直接填写 `dev` 
 
 采用 Angular Commit 规范。
 
-每条提交由 header、body、footer 三部分组成：
-
 ```
 <type>(<scope>): <subject>
-<BLANK LINE>
-<body>
-<BLANK LINE>
-<footer>
 ```
-
-**type（必填）：**
 
 | type | 说明 |
 |------|------|
@@ -115,31 +128,24 @@ IDEA 中可以在右上角运行配置的 Active profiles 栏直接填写 `dev` 
 | `refactor` | 重构 |
 | `test` | 测试 |
 
-**scope（选填）：** 影响范围，如模块名称（`admin`、`scheduling`、`billing`）
-
-**subject 规则：**
-- 祈使语气，现在时（`add` 不是 `added` 或 `adds`）
-- 首字母不大写
-- 结尾不加句号
+subject 规则：祈使语气、首字母小写、不加句号。
 
 示例：
-
 ```
 feat(device): add CRUD endpoints for device management
 fix(pricing): correct peak hour rate calculation precision
-docs: update API documentation
 ```
 
 ### 注释
 
 ```java
 /**
- * 统一 API 响应体包装。
+ * 充电订单表。
  *
- * @author XXX
- * @since 2026-06-12
+ * @author Deng Chao
+ * @since 2026-06-14
  */
-public class Result<T> { ... }
+public class ChargingOrder { ... }
 ```
 
 ### 推送

@@ -20,17 +20,18 @@ public class WebConfig implements WebMvcConfigurer {
         this.jwtInterceptor = jwtInterceptor;
     }
 
-    @Override
-    public void addInterceptors(InterceptorRegistry registry) {
-        registry.addInterceptor(jwtInterceptor)
-                .addPathPatterns("/api/v1/**", "/admin/**")
-                .excludePathPatterns(
-                        "/api/v1/account/create",
-                        "/api/v1/account/login",
-                        "/admin/account/create",
-                        "/admin/account/login",
-                        "/hello",
-                        "/db/health"
-                );
-    }
+    // 接口开发完成后取消注释以启用 JWT 鉴权
+    // @Override
+    // public void addInterceptors(InterceptorRegistry registry) {
+    //     registry.addInterceptor(jwtInterceptor)
+    //             .addPathPatterns("/api/v1/**", "/admin/**")
+    //             .excludePathPatterns(
+    //                     "/api/v1/account/create",
+    //                     "/api/v1/account/login",
+    //                     "/admin/account/create",
+    //                     "/admin/account/login",
+    //                     "/hello",
+    //                     "/db/health"
+    //             );
+    // }
 }

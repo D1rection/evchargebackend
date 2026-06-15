@@ -190,6 +190,37 @@ public class SchedulingEngine {
         onPileReleased(event.pileId(), event.pileType());
     }
 
+    // ---- 重建 ----
+
+    /**
+     * 清空并重建所有内存队列（启动时从 queue_entry 恢复后调用）。
+     *
+     * @param fastWait   快充等候区订单，按入队顺序
+     * @param slowWait   慢充等候区订单，按入队顺序
+     * @param fastFault  快充故障队列订单，按入队顺序
+     * @param slowFault  慢充故障队列订单，按入队顺序
+     * @param pileOrders 桩队列订单，按入队顺序，position 0 为第一个
+     */
+    public void rebuild(List<ChargingOrder> fastWait, List<ChargingOrder> slowWait,
+                        List<ChargingOrder> fastFault, List<ChargingOrder> slowFault,
+                        Map<String, List<ChargingOrder>> pileOrders) {
+        fastWaitQueue.clear();
+        slowWaitQueue.clear();
+        fastFaultQueue.clear();
+        slowFaultQueue.clear();
+        pileQueues.clear();
+
+        fastWaitQueue.addAll(fastWait);
+        slowWaitQueue.addAll(slowWait);
+        fastFaultQueue.addAll(fastFault);
+        slowFaultQueue.addAll(slowFault);
+
+        for (var entry : pileOrders.entrySet()) {
+            Deque<ChargingOrder> pq = pileQueue(entry.getKey());
+            pq.addAll(entry.getValue());
+        }
+    }
+
     // ---- 内部 ----
 
     /** 从等候区调一辆车填补桩队列空位（故障期间等候区冻结）。 */

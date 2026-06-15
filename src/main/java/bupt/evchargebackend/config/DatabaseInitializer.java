@@ -82,6 +82,7 @@ public class DatabaseInitializer implements CommandLineRunner {
                         target_kwh        DECIMAL(8,2) NOT NULL COMMENT 'kWh',
                         estimated_fee     DECIMAL(8,2) COMMENT '元',
                         estimated_minutes INT          COMMENT '分钟',
+                        pile_id           VARCHAR(36)  DEFAULT NULL COMMENT '分配的充电桩ID',
                         order_status      VARCHAR(20)  NOT NULL DEFAULT 'WAITING' COMMENT 'WAITING / CALLED / CHARGING / FINISHED / CANCELLED',
                         created_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
                         updated_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -172,6 +173,16 @@ public class DatabaseInitializer implements CommandLineRunner {
                         updated_at           DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
                     )
                     """ },
+                { "queue_entry", """
+                    CREATE TABLE IF NOT EXISTS queue_entry (
+                        id          BIGINT      AUTO_INCREMENT PRIMARY KEY,
+                        queue_type  VARCHAR(10) NOT NULL COMMENT 'WAIT / FAULT / PILE',
+                        queue_key   VARCHAR(36) NOT NULL COMMENT 'FAST/SLOW / pileId',
+                        order_id    VARCHAR(36) NOT NULL,
+                        created_at  DATETIME    NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        INDEX idx_queue (queue_type, queue_key, id)
+                    )
+                    """ },
             };
 
             for (String[] table : tables) {
@@ -186,6 +197,7 @@ public class DatabaseInitializer implements CommandLineRunner {
             // ========== Schema 演进：补全已存在表中缺失的列 ==========
             log.info("开始检查并补全缺失的列...");
             String[][] migrations = {
+                { "charging_order", "pile_id", "VARCHAR(36) DEFAULT NULL COMMENT '分配的充电桩ID'" },
                 { "charging_pile", "power_state", "VARCHAR(10) NOT NULL DEFAULT 'OFF' COMMENT 'OFF / ON'" },
                 { "fault_record", "fault_code", "INT COMMENT '故障码: 101过流/102过温/103通信中断/404离线'" },
                 { "fault_record", "resolve_code", "INT COMMENT '处置码: 200复位/201换硬件/202换通信/203重启/204其他'" },

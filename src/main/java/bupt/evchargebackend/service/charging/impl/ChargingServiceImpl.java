@@ -9,6 +9,7 @@ import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
+import bupt.evchargebackend.entity.queue.QueueEntry;
 import bupt.evchargebackend.entity.charging.enums.OrderStatus;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
@@ -21,6 +22,7 @@ import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
+import bupt.evchargebackend.mapper.queue.QueueEntryMapper;
 import bupt.evchargebackend.mapper.user.CarMapper;
 import bupt.evchargebackend.service.charging.ChargingService;
 import bupt.evchargebackend.common.time.TimeProvider;
@@ -45,12 +47,14 @@ public class ChargingServiceImpl implements ChargingService {
     private final ChargingPileMapper chargingPileMapper;
     private final ChargingSessionMapper chargingSessionMapper;
     private final BillingRatePeriodMapper billingRatePeriodMapper;
+    private final QueueEntryMapper queueEntryMapper;
     private final TimeProvider timeProvider;
 
     public ChargingServiceImpl(ChargingOrderMapper chargingOrderMapper, CarMapper carMapper,
                                SchedulingEngine engine, ChargingPileMapper chargingPileMapper,
                                ChargingSessionMapper chargingSessionMapper,
                                BillingRatePeriodMapper billingRatePeriodMapper,
+                               QueueEntryMapper queueEntryMapper,
                                TimeProvider timeProvider) {
         this.chargingOrderMapper = chargingOrderMapper;
         this.carMapper = carMapper;
@@ -58,6 +62,7 @@ public class ChargingServiceImpl implements ChargingService {
         this.chargingPileMapper = chargingPileMapper;
         this.chargingSessionMapper = chargingSessionMapper;
         this.billingRatePeriodMapper = billingRatePeriodMapper;
+        this.queueEntryMapper = queueEntryMapper;
         this.timeProvider = timeProvider;
     }
 
@@ -128,8 +133,10 @@ public class ChargingServiceImpl implements ChargingService {
 
         // 7. 调度：有故障时订单进入等候区（故障队列优先分发），否则选最优桩
         String selectedPileId = null;
+        String waitQueueKey = pileType == PileType.FAST ? "FAST" : "SLOW";
         if (engine.hasAnyFault()) {
             engine.enqueueWait(order);
+            insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
         } else {
             List<ChargingPile> piles = chargingPileMapper.selectList(
                     new QueryWrapper<ChargingPile>()
@@ -141,12 +148,15 @@ public class ChargingServiceImpl implements ChargingService {
                 ChargingPile best = piles.getFirst();
                 if (engine.addToPileQueue(best.getPileId(), order)) {
                     order.setOrderStatus(OrderStatus.CALLED);
+                    order.setPileId(best.getPileId());
                     chargingOrderMapper.updateById(order);
+                    insertQueueEntry("PILE", best.getPileId(), order.getOrderId());
                     selectedPileId = best.getPileId();
                 }
             }
             if (selectedPileId == null) {
                 engine.enqueueWait(order);
+                insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
             }
         }
 
@@ -341,5 +351,13 @@ public class ChargingServiceImpl implements ChargingService {
         order.setOrderStatus(OrderStatus.CHARGING);
         chargingOrderMapper.updateById(order);
         engine.setCharging(pile.getPileId(), order);
+    }
+
+    private void insertQueueEntry(String queueType, String queueKey, String orderId) {
+        QueueEntry entry = new QueueEntry();
+        entry.setQueueType(queueType);
+        entry.setQueueKey(queueKey);
+        entry.setOrderId(orderId);
+        queueEntryMapper.insert(entry);
     }
 }

@@ -16,6 +16,7 @@ import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
+import bupt.evchargebackend.mapper.queue.QueueEntryMapper;
 import bupt.evchargebackend.mapper.user.CarMapper;
 import bupt.evchargebackend.service.charging.impl.ChargingServiceImpl;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
@@ -43,6 +44,7 @@ class ChargingServiceImplTest {
     private ChargingPileMapper chargingPileMapper;
     private ChargingSessionMapper chargingSessionMapper;
     private BillingRatePeriodMapper billingRatePeriodMapper;
+    private QueueEntryMapper queueEntryMapper;
     private SchedulingEngine engine;
     private TimeProvider timeProvider;
     private ChargingServiceImpl service;
@@ -62,12 +64,13 @@ class ChargingServiceImplTest {
         chargingPileMapper = mock(ChargingPileMapper.class);
         chargingSessionMapper = mock(ChargingSessionMapper.class);
         billingRatePeriodMapper = mock(BillingRatePeriodMapper.class);
+        queueEntryMapper = mock(QueueEntryMapper.class);
         engine = mock(SchedulingEngine.class);
         timeProvider = mock(TimeProvider.class);
 
         service = new ChargingServiceImpl(chargingOrderMapper, carMapper,
                 engine, chargingPileMapper, chargingSessionMapper,
-                billingRatePeriodMapper, timeProvider);
+                billingRatePeriodMapper, queueEntryMapper, timeProvider);
 
         Car car = new Car();
         car.setCarId(CAR_ID);

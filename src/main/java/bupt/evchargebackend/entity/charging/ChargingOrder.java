@@ -40,6 +40,9 @@ public class ChargingOrder {
     /** 预估充电时长（分钟） */
     private Integer estimatedMinutes;
 
+    /** 分配的充电桩ID */
+    private String pileId;
+
     /** 订单状态 */
     private OrderStatus orderStatus;
 

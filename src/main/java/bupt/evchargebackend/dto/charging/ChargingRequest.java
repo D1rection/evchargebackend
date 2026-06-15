@@ -5,7 +5,7 @@ import lombok.Data;
 import java.math.BigDecimal;
 
 /**
- * 充电申请请求 DTO：兼容 camelCase / PascalCase / snake_case 字段映射。
+ * 充电申请请求 DTO。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -14,38 +14,18 @@ import java.math.BigDecimal;
 public class ChargingRequest {
 
     private String carId;
-    private String car_Id;
-    private String car_id;
     private BigDecimal requestAmount;
-    private BigDecimal RequestAmount;
     private String requestMode;
-    private String RequestMode;
 
     public String resolveCarId() {
-        if (hasText(carId)) {
-            return carId;
-        }
-        if (hasText(car_Id)) {
-            return car_Id;
-        }
-        return car_id;
+        return carId;
     }
 
     public BigDecimal resolveAmount() {
-        if (requestAmount != null) {
-            return requestAmount;
-        }
-        return RequestAmount;
+        return requestAmount;
     }
 
     public String resolveMode() {
-        if (hasText(requestMode)) {
-            return requestMode;
-        }
-        return RequestMode;
-    }
-
-    private boolean hasText(String value) {
-        return value != null && !value.isBlank();
+        return requestMode;
     }
 }

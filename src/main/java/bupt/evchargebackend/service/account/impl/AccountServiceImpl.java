@@ -117,8 +117,6 @@ public class AccountServiceImpl implements AccountService {
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("carId", finalCarId);
-        data.put("carNo", finalCarNo);
-        data.put("carCapacity", batteryCapacityKwh);
         return data;
     }
 

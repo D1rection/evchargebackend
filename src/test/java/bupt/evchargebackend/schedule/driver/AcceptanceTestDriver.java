@@ -27,6 +27,18 @@ import java.util.*;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
+/**
+ * 调度引擎验收测试驱动：读取测试用例和预期结果，按 5 分钟步进驱动仿真。
+ *
+ * <p>仿真流程：
+ * <ul>
+ *   <li>checkpoint → 边界故障检测 → 步进(事件处理 + 充电) → 剩余事件 → verify</li>
+ *   <li>边界步进前若有 FAULT 事件，设 deferWaitDispatch 抑制 fillSlot 误从等候区分发</li>
+ * </ul>
+ *
+ * @author Deng Chao
+ * @since 2026-06-14
+ */
 class AcceptanceTestDriver {
 
     private static final Path CASE_FILE = Path.of("src/test/resources/schedule/test-case.txt");
@@ -63,14 +75,25 @@ class AcceptanceTestDriver {
         try {
             for (var cp : checkpoints) {
                 int targetMinutes = toMinutes(cp.time);
+                // 边界检查：checkpoint时刻是否有FAULT事件（影响fillSlot）
+                boolean hasPendingFault = false;
+                if (stepMinutes < targetMinutes) {
+                    for (int i = eventIdx; i < events.size() && toMinutes(events.get(i).time) == targetMinutes; i++) {
+                        if ("FAULT".equals(events.get(i).type)) { hasPendingFault = true; break; }
+                    }
+                }
                 while (stepMinutes < targetMinutes) {
+                    int nextTime = stepMinutes + TIME_STEP;
                     while (eventIdx < events.size()
                             && toMinutes(events.get(eventIdx).time) == stepMinutes) {
                         processEvent(events.get(eventIdx));
                         eventIdx++;
                     }
+                    boolean boundaryFault = hasPendingFault && nextTime == targetMinutes;
+                    engine.setDeferWaitDispatch(boundaryFault);
                     advanceCharging(TIME_STEP);
-                    stepMinutes += TIME_STEP;
+                    engine.setDeferWaitDispatch(false);
+                    stepMinutes = nextTime;
                     time.advance(TIME_STEP);
                 }
                 while (eventIdx < events.size() && events.get(eventIdx).time.equals(cp.time)) {
@@ -102,7 +125,6 @@ class AcceptanceTestDriver {
                 finished.add(session);
             }
             session.setChargedKwh(charged);
-            // 累加费用
             LocalTime rateTime = time.now().toLocalTime();
             BigDecimal fee = increment.multiply(BillingHelper.rateAt(rateTime));
             stub.addSessionFee(session.getSessionId(), fee);
@@ -145,36 +167,13 @@ class AcceptanceTestDriver {
 
                 String actualKwh = session != null
                         ? String.format("%.2f", session.getChargedKwh()) : "-";
-                if (!expected.kwh.equals(actualKwh)) {
-                    try {
-                        double diff = Math.abs(Double.parseDouble(expected.kwh)
-                                - Double.parseDouble(actualKwh));
-                        if (diff > 0.6) {
-                            assertEquals(expected.kwh, actualKwh,
-                                    pileNames[i] + " kwh mismatch at " + cp.time);
-                        }
-                    } catch (NumberFormatException e) {
-                        assertEquals(expected.kwh, actualKwh,
-                                pileNames[i] + " kwh mismatch at " + cp.time);
-                    }
-                }
+                assertEquals(expected.kwh, actualKwh,
+                        pileNames[i] + " kwh mismatch at " + cp.time);
 
-                // 校验费用（放宽容差，因费用值较大）
                 String actualFee = session != null
                         ? String.format("%.2f", stub.getSessionFee(session.getSessionId())) : "-";
-                if (!expected.fee.equals(actualFee)) {
-                    try {
-                        double diff = Math.abs(Double.parseDouble(expected.fee)
-                                - Double.parseDouble(actualFee));
-                        if (diff > 1.0) {
-                            assertEquals(expected.fee, actualFee,
-                                    pileNames[i] + " fee mismatch at " + cp.time);
-                        }
-                    } catch (NumberFormatException e) {
-                        assertEquals(expected.fee, actualFee,
-                                pileNames[i] + " fee mismatch at " + cp.time);
-                    }
-                }
+                assertEquals(expected.fee, actualFee,
+                        pileNames[i] + " fee mismatch at " + cp.time);
             }
         }
     }

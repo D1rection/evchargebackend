@@ -40,6 +40,8 @@ public class SchedulingEngine {
     private final Queue<ChargingOrder> fastFaultQueue = new LinkedList<>();
     private final Queue<ChargingOrder> slowFaultQueue = new LinkedList<>();
     private final Map<String, Deque<ChargingOrder>> pileQueues = new ConcurrentHashMap<>();
+    /** 抑制fillSlot从等候区分发（边界步进有待处理故障时暂缓，避免故障前一刻误分）。 */
+    private boolean deferWaitDispatch = false;
 
     @Autowired
     public SchedulingEngine(ScheduleStrategy scheduleStrategy) {
@@ -133,23 +135,18 @@ public class SchedulingEngine {
         return Optional.ofNullable(pq.peekFirst());
     }
 
-    /** 充电桩故障：将该桩排队队列中排队车辆（不含充电中）移入故障队列。 */
+    /** 充电桩故障：将排队车辆移入故障队列，充电车由 fault() 的 enqueueFault 管理。 */
     public List<ChargingOrder> onPileFaulted(String pileId, PileType pileType) {
         Deque<ChargingOrder> pq = pileQueue(pileId);
         Queue<ChargingOrder> fq = faultQueue(pileType);
         List<ChargingOrder> moved = new ArrayList<>();
-        // 保留 position 0（充电中），仅移走排队车辆
-        ChargingOrder charging = pq.pollFirst();
+        pq.pollFirst();
         while (!pq.isEmpty()) {
             moved.add(pq.pollFirst());
         }
         fq.addAll(moved);
-        // position 0 放回（由 fault() 另行处理）
-        if (charging != null) pq.addFirst(charging);
         return moved;
     }
-
-
 
     /** 从桩前队列取 position 0 的订单并移除（用于故障恢复后启动充电）。 */
     public ChargingOrder pollFromPileQueue(String pileId) {
@@ -164,6 +161,8 @@ public class SchedulingEngine {
 
     public java.util.Queue<ChargingOrder> getFastWaitQueue() { return fastWaitQueue; }
     public java.util.Queue<ChargingOrder> getSlowWaitQueue() { return slowWaitQueue; }
+    /** 设置是否抑制 fillSlot 从等候区分发（边界步进有故障时暂缓）。 */
+    public void setDeferWaitDispatch(boolean v) { this.deferWaitDispatch = v; }
 
     public void removeFromFaultQueues(String carId) {
         fastFaultQueue.removeIf(o -> carId.equals(o.getCarId()));
@@ -193,6 +192,7 @@ public class SchedulingEngine {
         if (pq.size() >= maxPileQueue) return;
         // 故障期间等候区停止调度
         if (!fastFaultQueue.isEmpty() || !slowFaultQueue.isEmpty()) return;
+        if (deferWaitDispatch) return;
         Queue<ChargingOrder> wq = waitQueue(pileType);
         if (wq.isEmpty()) return;
         ChargingOrder next = scheduleStrategy.selectOne(wq.stream().toList());

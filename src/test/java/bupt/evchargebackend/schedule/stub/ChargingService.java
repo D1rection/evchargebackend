@@ -24,6 +24,21 @@ import java.util.UUID;
  * @author Deng Chao
  * @since 2026-06-14
  */
+/**
+ * 充电服务桩：管理订单提交、充电完成、故障/恢复、故障车重分配。
+ *
+ * <p>核心流程：
+ * <ul>
+ *   <li>submit — 无故障时直分配可用桩；有故障或所有桩队满则最优桩满→等候区</li>
+ *   <li>finish — 占位结束 → onPileReleased 触发下一辆 + redistributeFaults</li>
+ *   <li>fault — 先 enqueueFault（充电车）再 onPileFaulted（排队车），故障队列 [充, 排, ...]</li>
+ *   <li>recover — 桩恢复 → onPileReleased + redistributeFaults + 等候区冲刷</li>
+ *   <li>redistributeFaults — 按 totalActiveMinutes 选最短桩分发，working=1 限 1 辆/次</li>
+ * </ul>
+ *
+ * @author Deng Chao
+ * @since 2026-06-14
+ */
 public class ChargingService {
 
     private final Stub stub;
@@ -48,26 +63,13 @@ public class ChargingService {
                 return order;
             }
         }
-        if (!engine.hasAnyFault()) {
-            var allPilesForWait = stub.findPilesByType(pileType);
-            long nonFault = allPilesForWait.stream()
-                    .filter(p -> p.getWorkingState() != WorkingState.FAULT).count();
-            long withQueue = allPilesForWait.stream()
-                    .filter(p -> p.getWorkingState() != WorkingState.FAULT)
-                    .filter(p -> !engine.getPileQueue(p.getPileId()).isEmpty())
-                    .count();
-            if (nonFault > 0 && withQueue == nonFault) {
-                engine.enqueueWait(order);
-                return order;
-            }
-        }
         var piles = stub.findPilesByType(pileType);
         piles.removeIf(p -> p.getWorkingState() == WorkingState.FAULT);
         piles.sort(Comparator.comparingLong(p -> totalActiveMinutes(p, pileType)));
-        for (var pile : piles) {
-            if (engine.addToPileQueue(pile.getPileId(), order)) {
-                return order;
-            }
+        // 最优桩有空位？有 → 分配过去；无 → 等候区
+        var best = piles.getFirst();
+        if (engine.addToPileQueue(best.getPileId(), order)) {
+            return order;
         }
         engine.enqueueWait(order);
         return order;
@@ -98,7 +100,7 @@ public class ChargingService {
         ChargingPile pile = stub.getPile(pileId);
         if (pile == null) return;
         pile.setWorkingState(WorkingState.FAULT);
-        engine.onPileFaulted(pileId, pile.getPileType());
+        // 先入故障队列充电车，后入排队车 → 故障队列 [充, 排, ...]
         ChargingSession session = stub.findSessionByPile(pileId);
         if (session != null) {
             session.setSessionStatus(SessionStatus.INTERRUPTED);
@@ -108,6 +110,7 @@ public class ChargingService {
                 engine.enqueueFault(order);
             }
         }
+        engine.onPileFaulted(pileId, pile.getPileType());
     }
 
     /** 故障恢复：桩可用 → 尝试调度下一辆。 */
@@ -202,27 +205,24 @@ public class ChargingService {
                 .findFirst().orElse(null);
     }
 
-    /** 将故障队列中的车分发到排队最短的同类型桩（至少 2 个可用桩时才分发）。 */
+    /** 将故障队列中的车分发到总充电时长最短的同类型桩。 */
     private void redistributeFaults(PileType pileType) {
         if (!engine.hasFaults(pileType)) return;
-        var allPiles = stub.findPilesByType(pileType);
-        long working = allPiles.stream().filter(p -> p.getWorkingState() != WorkingState.FAULT).count();
-        if (working < 2) return;
         var piles = stub.findPilesByType(pileType);
         piles.removeIf(p -> p.getWorkingState() == WorkingState.FAULT);
-        while (engine.hasFaults(pileType)) {
-            piles.sort(Comparator.comparingInt(p -> engine.pileQueueSize(p.getPileId())));
-            boolean placed = false;
-            for (var pile : piles) {
-                ChargingOrder faultCar = engine.pollFault(pileType);
-                if (faultCar == null) break;
-                engine.removeFromWait(faultCar.getCarId());
-                if (engine.addToPileQueue(pile.getPileId(), faultCar)) {
-                    placed = true;
-                    break;
-                }
-            }
-            if (!placed) break;
+        if (piles.isEmpty()) return;
+        long working = piles.size();
+        int maxCars = working >= 2 ? Integer.MAX_VALUE : 1;
+        int count = 0;
+        while (engine.hasFaults(pileType) && count < maxCars) {
+            piles.sort(Comparator.comparingLong(p -> totalActiveMinutes(p, pileType)));
+            var target = piles.getFirst();
+            if (engine.pileQueueSize(target.getPileId()) >= 3) break;
+            ChargingOrder faultCar = engine.pollFault(pileType);
+            if (faultCar == null) break;
+            engine.removeFromWait(faultCar.getCarId());
+            engine.addToPileQueue(target.getPileId(), faultCar);
+            count++;
         }
     }
 

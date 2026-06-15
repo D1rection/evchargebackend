@@ -186,6 +186,7 @@ public class DatabaseInitializer implements CommandLineRunner {
             // ========== Schema 演进：补全已存在表中缺失的列 ==========
             log.info("开始检查并补全缺失的列...");
             String[][] migrations = {
+                { "charging_pile", "power_state", "VARCHAR(10) NOT NULL DEFAULT 'OFF' COMMENT 'OFF / ON'" },
                 { "fault_record", "fault_code", "INT COMMENT '故障码: 101过流/102过温/103通信中断/404离线'" },
                 { "fault_record", "resolve_code", "INT COMMENT '处置码: 200复位/201换硬件/202换通信/203重启/204其他'" },
                 { "fault_record", "resolver", "VARCHAR(50) COMMENT '处置人'" },

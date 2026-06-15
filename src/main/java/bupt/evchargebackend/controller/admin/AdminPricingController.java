@@ -8,8 +8,6 @@ import java.util.Map;
 
 /**
  * 管理员计费规则 Controller。
- * <p>
- * 提供分时段电费和服务费的查询接口。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -24,15 +22,9 @@ public class AdminPricingController {
         this.adminPricingService = adminPricingService;
     }
 
-    /**
-     * 获取当前全局计费规则。
-     * <p>
-     * 返回峰/平/谷各时段的电价、起止时间和服务费单价。
-     *
-     * @return 计费规则数据 Map，包含 {@code peakStart}、{@code peakPrice} 等字段
-     */
+    /** 获取当前全局计费规则 */
     @GetMapping("/pricing")
     public Result<Map<String, Object>> getPricing() {
-        return Result.of(() -> adminPricingService.getPricing());
+        return Result.success(adminPricingService.getPricing());
     }
 }

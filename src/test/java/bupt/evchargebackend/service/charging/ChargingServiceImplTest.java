@@ -9,6 +9,7 @@ import bupt.evchargebackend.entity.charging.ChargingSession;
 import bupt.evchargebackend.entity.charging.enums.OrderStatus;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
+import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
@@ -840,6 +841,61 @@ class ChargingServiceImplTest {
 
         service.end(req);
         verify(queueEntryMapper).deleteById(99L);
+    }
+
+    // ========== 取消充电申请 ==========
+
+    @Test
+    void cancelShouldReturn400_whenCarIdIsEmpty() {
+        assertEquals(400, service.cancel(new ChargingCancelRequest()).getCode());
+    }
+
+    @Test
+    void cancelShouldReturn404_whenNoCancelableOrder() {
+        // 无 WAITING/CALLED 订单（FINISHED/CHARGING/CANCELLED 时查不到）
+        doReturn(null).when(chargingOrderMapper).selectOne(any());
+        ChargingCancelRequest req = new ChargingCancelRequest();
+        req.setCarId(CAR_ID);
+        assertEquals(404, service.cancel(req).getCode());
+    }
+
+    @Test
+    void cancelShouldRemoveFromWait_whenWaiting() {
+        ChargingOrder order = createOrder(OrderStatus.WAITING);
+        order.setRequestMode(RequestMode.FAST);
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+
+        ChargingCancelRequest req = new ChargingCancelRequest();
+        req.setCarId(CAR_ID);
+        assertEquals(200, service.cancel(req).getCode());
+
+        verify(engine).removeFromWait(CAR_ID);
+        verify(queueEntryMapper).delete(any());
+        verify(chargingOrderMapper).updateById(any(ChargingOrder.class));
+    }
+
+    @Test
+    void cancelShouldRemoveFromPileQueue_whenCalled() {
+        ChargingOrder order = createOrder(OrderStatus.CALLED);
+        order.setPileId("F1");
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+
+        ChargingCancelRequest req = new ChargingCancelRequest();
+        req.setCarId(CAR_ID);
+        assertEquals(200, service.cancel(req).getCode());
+
+        verify(engine).removeFromAllPileQueues(CAR_ID);
+        verify(queueEntryMapper).delete(any());
+        verify(chargingOrderMapper).updateById(any(ChargingOrder.class));
+    }
+
+    @Test
+    void cancelShouldReturn404_whenOrderNotWaitingOrCalled() {
+        doReturn(null).when(chargingOrderMapper).selectOne(any());
+
+        ChargingCancelRequest req = new ChargingCancelRequest();
+        req.setCarId(CAR_ID);
+        assertEquals(404, service.cancel(req).getCode());
     }
 
     // ========== Helper ==========

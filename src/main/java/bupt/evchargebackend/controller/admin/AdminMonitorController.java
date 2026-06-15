@@ -38,7 +38,7 @@ public class AdminMonitorController {
     public Result<PageResult<Map<String, Object>>> listPiles(
             @RequestParam(required = false) Integer pageNum,
             @RequestParam(required = false) Integer pageSize) {
-        return Result.success(adminMonitorService.listPileStatus(pageNum, pageSize));
+        return Result.of(() -> adminMonitorService.listPileStatus(pageNum, pageSize));
     }
 
     /**
@@ -50,6 +50,6 @@ public class AdminMonitorController {
      */
     @GetMapping("/dashboard")
     public Result<Map<String, Object>> dashboard() {
-        return Result.success(adminMonitorService.getDashboard());
+        return Result.of(() -> adminMonitorService.getDashboard());
     }
 }

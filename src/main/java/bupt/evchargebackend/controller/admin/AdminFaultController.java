@@ -44,7 +44,7 @@ public class AdminFaultController {
             @RequestParam int pageSize,
             @RequestParam(required = false) Integer status) {
         try {
-            return Result.success(adminFaultService.listFaults(pageNum, pageSize, status));
+            return Result.of(() -> adminFaultService.listFaults(pageNum, pageSize, status));
         } catch (Exception e) {
             log.error("查询故障列表失败: pageNum={}, pageSize={}, status={}", pageNum, pageSize, status, e);
             throw e;
@@ -56,14 +56,14 @@ public class AdminFaultController {
      *
      * @param faultId 故障记录 ID
      * @param request 处置请求体，包含 {@code resolveCode}（处置码）和 {@code remark}（处置备注）
-     * @return 空成功响应
+     * @return 空成功响应；不存在时 {@code code=404}；已处置时 {@code code=409}
      */
     @PostMapping("/faults/{faultId}")
     public Result<Void> resolveFault(@PathVariable String faultId,
                                      @RequestBody FaultResolveRequest request) {
         try {
-            adminFaultService.resolveFault(faultId, request.getResolveCode(), request.getRemark());
-            return Result.success();
+            return Result.ofVoid(() -> adminFaultService.resolveFault(
+                    faultId, request.getResolveCode(), request.getRemark()));
         } catch (Exception e) {
             log.error("处置故障失败: faultId={}, resolveCode={}", faultId, request.getResolveCode(), e);
             throw e;

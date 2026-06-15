@@ -34,7 +34,7 @@ public class AdminStationController {
      */
     @GetMapping("/station-config")
     public Result<Map<String, Object>> getStationConfig() {
-        return Result.success(adminStationService.getStationConfig());
+        return Result.of(() -> adminStationService.getStationConfig());
     }
 
     /**
@@ -45,8 +45,7 @@ public class AdminStationController {
      */
     @PostMapping("/station-config")
     public Result<Void> updateStationConfig(@RequestBody StationConfigRequest request) {
-        adminStationService.updateStationConfig(request);
-        return Result.success();
+        return Result.ofVoid(() -> adminStationService.updateStationConfig(request));
     }
 
     /**
@@ -56,18 +55,18 @@ public class AdminStationController {
      */
     @GetMapping("/devices")
     public Result<List<Map<String, Object>>> listDevices() {
-        return Result.success(adminStationService.listDevices());
+        return Result.of(() -> adminStationService.listDevices());
     }
 
     /**
      * 新增充电桩。
      *
      * @param request 充电桩请求体，包含 {@code pileNo}、{@code pileType}、{@code powerKw}
-     * @return {@code {pileId}} 新创建的充电桩 ID
+     * @return {@code {pileId}} 新创建的充电桩 ID；冲突时 {@code code=409}
      */
     @PostMapping("/devices")
     public Result<Map<String, Object>> addDevice(@RequestBody PileRequest request) {
-        return Result.success(adminStationService.addDevice(request));
+        return Result.of(() -> adminStationService.addDevice(request));
     }
 
     /**
@@ -75,24 +74,22 @@ public class AdminStationController {
      *
      * @param pileId  充电桩 ID
      * @param request 充电桩请求体，可部分更新
-     * @return 空成功响应
+     * @return 空成功响应；不存在时 {@code code=404}
      */
     @PostMapping("/devices/update/{pileId}")
     public Result<Void> updateDevice(@PathVariable String pileId,
                                      @RequestBody PileRequest request) {
-        adminStationService.updateDevice(pileId, request);
-        return Result.success();
+        return Result.ofVoid(() -> adminStationService.updateDevice(pileId, request));
     }
 
     /**
      * 删除充电桩。
      *
      * @param pileId 充电桩 ID
-     * @return 空成功响应
+     * @return 空成功响应；不存在时 {@code code=404}
      */
     @PostMapping("/devices/delete/{pileId}")
     public Result<Void> deleteDevice(@PathVariable String pileId) {
-        adminStationService.deleteDevice(pileId);
-        return Result.success();
+        return Result.ofVoid(() -> adminStationService.deleteDevice(pileId));
     }
 }

@@ -33,6 +33,6 @@ public class AdminPricingController {
      */
     @GetMapping("/pricing")
     public Result<Map<String, Object>> getPricing() {
-        return Result.success(adminPricingService.getPricing());
+        return Result.of(() -> adminPricingService.getPricing());
     }
 }

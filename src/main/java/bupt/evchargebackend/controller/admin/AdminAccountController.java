@@ -10,8 +10,8 @@ import java.util.Map;
 /**
  * 管理员账号 Controller。
  * <p>
- * 提供管理员注册和登录接口。
- * 注册成功后返回用户基本信息，登录成功后返回 JWT Token。
+ * 提供管理员注册和登录接口，使用 {@link Result#of(java.util.function.Supplier)}
+ * 显式处理业务异常的错误码。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -30,25 +30,23 @@ public class AdminAccountController {
      * 管理员注册。
      *
      * @param request 注册请求体，包含 {@code userName} 和 {@code password}
-     * @return {@code {userId, userName, role}} 注册成功的用户信息
+     * @return 成功时 {@code {userId, userName, role}}；用户名已存在时 {@code code=409}
      */
     @PostMapping("/create")
     public Result<Map<String, Object>> create(@RequestBody AdminAccountRequest request) {
-        Map<String, Object> result = adminAccountService.register(
-                request.getUserName(), request.getPassword());
-        return Result.success(result);
+        return Result.of(() -> adminAccountService.register(
+                request.getUserName(), request.getPassword()));
     }
 
     /**
      * 管理员登录。
      *
      * @param request 登录请求体，包含 {@code userName} 和 {@code password}
-     * @return {@code {userName, token}} 登录成功的用户名和 JWT Token
+     * @return 成功时 {@code {userName, token}}；认证失败时 {@code code=401}
      */
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody AdminAccountRequest request) {
-        Map<String, Object> result = adminAccountService.login(
-                request.getUserName(), request.getPassword());
-        return Result.success(result);
+        return Result.of(() -> adminAccountService.login(
+                request.getUserName(), request.getPassword()));
     }
 }

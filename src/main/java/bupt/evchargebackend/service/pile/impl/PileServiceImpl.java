@@ -138,12 +138,13 @@ public class PileServiceImpl implements PileService {
                 item.setCarId(head.getCarId());
                 item.setCarCapacity(car.getBatteryCapacityKwh());
                 item.setRequestAmount(head.getTargetKwh());
-                item.setQueuePosition(1);
+                item.setQueuePosition(0);
                 item.setWaitTime(formatDuration(headRemainSec));
                 items.add(item);
             }
         }
 
+        int posBase = head != null ? 1 : 0;
         long accumulated = headRemainSec;
         for (int i = 0; i < waiting.size(); i++) {
             Car car = carMapper.selectById(waiting.get(i).getCarId());
@@ -153,7 +154,7 @@ public class PileServiceImpl implements PileService {
                 item.setCarId(order.getCarId());
                 item.setCarCapacity(car.getBatteryCapacityKwh());
                 item.setRequestAmount(order.getTargetKwh());
-                item.setQueuePosition(i + 2);
+                item.setQueuePosition(i + posBase);
                 item.setWaitTime(formatDuration(accumulated));
                 items.add(item);
             }

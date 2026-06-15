@@ -9,11 +9,16 @@ import bupt.evchargebackend.entity.charging.ChargingSession;
 import bupt.evchargebackend.entity.charging.enums.OrderStatus;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
+import bupt.evchargebackend.dto.charging.ChargingEndRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
+import bupt.evchargebackend.entity.bill.Bill;
+import bupt.evchargebackend.entity.bill.enums.PaymentStatus;
+import bupt.evchargebackend.entity.queue.QueueEntry;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.entity.user.Car;
 import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
@@ -40,6 +45,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.atMostOnce;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -631,6 +641,205 @@ class ChargingServiceImplTest {
         assertEquals("interrupted", result.getData().getStatus());
         assertEquals("15.00", result.getData().getCurrentAmount().toString());
         assertEquals("00:30:00", result.getData().getCurrentDuration());
+    }
+
+    // ========== 结束充电 ==========
+
+    @Test
+    void endShouldReturn400_whenCarIdIsEmpty() {
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setChargingPileNum("F1");
+        assertEquals(400, service.end(req).getCode());
+    }
+
+    @Test
+    void endShouldReturn400_whenPileIdIsEmpty() {
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        assertEquals(400, service.end(req).getCode());
+    }
+
+    @Test
+    void endShouldReturn400_whenNoChargingSession() {
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        req.setChargingPileNum("F1");
+        doReturn(null).when(chargingSessionMapper).selectOne(any());
+        assertEquals(400, service.end(req).getCode());
+    }
+
+    @Test
+    void endShouldReturn404_whenOrderNotFound() {
+        ChargingSession session = createSession(NOW, 40, SessionStatus.CHARGING);
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        req.setChargingPileNum("F1");
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(null).when(chargingOrderMapper).selectById(any());
+        assertEquals(404, service.end(req).getCode());
+    }
+
+    @Test
+    void endShouldReturn404_whenPileNotFound() {
+        ChargingSession session = createSession(NOW, 40, SessionStatus.CHARGING);
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        req.setChargingPileNum("F1");
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(createCalledOrder()).when(chargingOrderMapper).selectById(any());
+        doReturn(null).when(chargingPileMapper).selectById("F1");
+        assertEquals(404, service.end(req).getCode());
+    }
+
+    @Test
+    void endShouldCompleteCharging() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime end = start.plusHours(1);
+        ChargingSession session = createSession(start, 40, SessionStatus.CHARGING);
+        ChargingOrder order = createCalledOrder();
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        req.setChargingPileNum("F1");
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(order).when(chargingOrderMapper).selectById(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(end).when(timeProvider).now();
+        doReturn(mutableList(period("00:00", "24:00", "1.5", "5.0"))).when(billingRatePeriodMapper).selectList(any());
+        // onPileReleased 默认 mock 返回空，无需配置
+
+        var result = service.end(req);
+        assertEquals(200, result.getCode());
+        assertEquals(Integer.valueOf(1), result.getData().getResult());
+
+        verify(billMapper).insert(any(Bill.class));
+        verify(chargingSessionMapper).updateById(any(ChargingSession.class));
+        verify(chargingOrderMapper).updateById(any(ChargingOrder.class));
+        verify(chargingPileMapper).updateById(any(ChargingPile.class));
+        verify(engine).onPileReleased(eq("F1"), any());
+    }
+
+    @Test
+    void endShouldThrow_whenCalledTwice() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        ChargingSession session = createSession(start, 40, SessionStatus.CHARGING);
+        ChargingOrder order = createCalledOrder();
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        req.setChargingPileNum("F1");
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(order).when(chargingOrderMapper).selectById(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+
+        LocalDateTime end = start.plusHours(1);
+        doReturn(end).when(timeProvider).now();
+        doReturn(mutableList(period("00:00", "24:00", "1.5", "5.0"))).when(billingRatePeriodMapper).selectList(any());
+        // onPileReleased 默认 mock 返回空，无需配置
+        service.end(req);
+
+        doReturn(null).when(chargingSessionMapper).selectOne(any());
+        assertEquals(400, service.end(req).getCode());
+    }
+
+    @Test
+    void endShouldFillFromWaiting_whenWaitingCarExists() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime end = start.plusHours(1);
+        ChargingSession session = createSession(start, 40, SessionStatus.CHARGING);
+        ChargingOrder order = createCalledOrder();
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        ChargingOrder waitingOrder = createOrder(OrderStatus.WAITING);
+        waitingOrder.setOrderId("wait-order-1");
+        waitingOrder.setRequestMode(RequestMode.FAST);
+        QueueEntry waitEntry = new QueueEntry();
+        waitEntry.setId(1L);
+        waitEntry.setOrderId("wait-order-1");
+
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        req.setChargingPileNum("F1");
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(order).when(chargingOrderMapper).selectById(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(end).when(timeProvider).now();
+        doReturn(mutableList(period("00:00", "24:00", "1.5", "5.0"))).when(billingRatePeriodMapper).selectList(any());
+        doReturn(false).when(engine).hasAnyFault();
+        doReturn(waitEntry).when(queueEntryMapper).selectOne(any());
+        doReturn(waitingOrder).when(chargingOrderMapper).selectById("wait-order-1");
+        doReturn(true).when(engine).addToPileQueue("F1", waitingOrder);
+        // onPileReleased 默认 mock 返回空，无需配置
+
+        service.end(req);
+        verify(engine).addToPileQueue(eq("F1"), eq(waitingOrder));
+        verify(chargingOrderMapper, atLeastOnce()).updateById(any(ChargingOrder.class));
+    }
+
+    @Test
+    void endShouldNotFillFromWaiting_whenFaultExists() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime end = start.plusHours(1);
+        ChargingSession session = createSession(start, 40, SessionStatus.CHARGING);
+        ChargingOrder order = createCalledOrder();
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        req.setChargingPileNum("F1");
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(order).when(chargingOrderMapper).selectById(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(end).when(timeProvider).now();
+        doReturn(mutableList(period("00:00", "24:00", "1.5", "5.0"))).when(billingRatePeriodMapper).selectList(any());
+        doReturn(true).when(engine).hasAnyFault();
+        // onPileReleased 默认 mock 返回空，无需配置
+
+        service.end(req);
+        // tryFillFromWaiting 跳过，不额外调用 deleteById
+        verify(queueEntryMapper, atMostOnce()).deleteById(any(java.io.Serializable.class));
+    }
+
+    @Test
+    void endShouldRemoveStaleWaitingEntry() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime end = start.plusHours(1);
+        ChargingSession session = createSession(start, 40, SessionStatus.CHARGING);
+        ChargingOrder order = createCalledOrder();
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        ChargingOrder finishedOrder = createOrder(OrderStatus.FINISHED);
+        finishedOrder.setOrderId("stale-order-1");
+        QueueEntry staleEntry = new QueueEntry();
+        staleEntry.setId(99L);
+        staleEntry.setOrderId("stale-order-1");
+
+        ChargingEndRequest req = new ChargingEndRequest();
+        req.setCarId(CAR_ID);
+        req.setChargingPileNum("F1");
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(order).when(chargingOrderMapper).selectById(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(end).when(timeProvider).now();
+        doReturn(mutableList(period("00:00", "24:00", "1.5", "5.0"))).when(billingRatePeriodMapper).selectList(any());
+        doReturn(false).when(engine).hasAnyFault();
+        doReturn(staleEntry).doReturn(null).when(queueEntryMapper).selectOne(any());
+        doReturn(finishedOrder).when(chargingOrderMapper).selectById("stale-order-1");
+
+        service.end(req);
+        verify(queueEntryMapper).deleteById(99L);
     }
 
     // ========== Helper ==========

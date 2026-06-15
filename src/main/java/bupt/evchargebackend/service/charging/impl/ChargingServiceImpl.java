@@ -540,6 +540,7 @@ public class ChargingServiceImpl implements ChargingService {
             queueEntryMapper.deleteById(qe.getId());
         }
         engine.onPileReleased(pileId, pileType);
+        tryFillFromWaiting(pileId, pileType);
 
         ChargingEndResponse resp = new ChargingEndResponse();
         resp.setResult(1);
@@ -687,6 +688,38 @@ public class ChargingServiceImpl implements ChargingService {
         engine.setCharging(pile.getPileId(), order);
     }
 
+    /** 桩释放后尝试从等候区补位：查 queue_entry 找等候区最早车辆，改订单状态并同步。 */
+    private void tryFillFromWaiting(String pileId, PileType pileType) {
+        if (engine.hasAnyFault()) return;
+        if (engine.pileQueueSize(pileId) >= 3) return;
+
+        String waitKey = pileType == PileType.FAST ? "FAST" : "SLOW";
+        QueueEntry qe = queueEntryMapper.selectOne(
+                new QueryWrapper<QueueEntry>()
+                        .eq("queue_type", "WAIT")
+                        .eq("queue_key", waitKey)
+                        .orderByAsc("id")
+                        .last("LIMIT 1")
+        );
+        if (qe == null) return;
+
+        ChargingOrder order = chargingOrderMapper.selectById(qe.getOrderId());
+        if (order == null) return;
+        if (order.getOrderStatus() != OrderStatus.WAITING) {
+            queueEntryMapper.deleteById(qe.getId());
+            return;
+        }
+
+        if (!engine.addToPileQueue(pileId, order)) return;
+
+        order.setOrderStatus(OrderStatus.CALLED);
+        order.setPileId(pileId);
+        chargingOrderMapper.updateById(order);
+
+        queueEntryMapper.deleteById(qe.getId());
+        insertQueueEntry("PILE", pileId, order.getOrderId());
+    }
+
     private void autoFinish(String sessionId) {
         ChargingSession session = chargingSessionMapper.selectById(sessionId);
         if (session == null || session.getSessionStatus() != SessionStatus.CHARGING) return;
@@ -744,6 +777,7 @@ public class ChargingServiceImpl implements ChargingService {
         );
         if (qe != null) queueEntryMapper.deleteById(qe.getId());
         engine.onPileReleased(pile.getPileId(), pileType);
+        tryFillFromWaiting(pile.getPileId(), pileType);
     }
 
     private void insertQueueEntry(String queueType, String queueKey, String orderId) {

@@ -151,12 +151,11 @@ public class SchedulingEngine {
      * 充电桩完成一轮充电时触发：
      * 1. position 0 出队（已完成的订单）
      * 2. 原 position 1 顶上 → 新的 position 0
-     * 3. 空出一个位 → 等候区填补
+     * <p>等候区补位由 Service 层 {@code tryFillFromWaiting} 处理。</p>
      */
     public Optional<ChargingOrder> onPileReleased(String pileId, PileType pileType) {
         Deque<ChargingOrder> pq = pileQueue(pileId);
         pq.pollFirst();
-        fillSlot(pileType, pq);
         return Optional.ofNullable(pq.peekFirst());
     }
 
@@ -242,19 +241,6 @@ public class SchedulingEngine {
     }
 
     // ---- 内部 ----
-
-    /** 从等候区调一辆车填补桩队列空位（故障期间等候区冻结）。 */
-    private void fillSlot(PileType pileType, Deque<ChargingOrder> pq) {
-        if (pq.size() >= maxPileQueue) return;
-        // 故障期间等候区停止调度
-        if (!fastFaultQueue.isEmpty() || !slowFaultQueue.isEmpty()) return;
-        if (deferWaitDispatch) return;
-        Queue<ChargingOrder> wq = waitQueue(pileType);
-        if (wq.isEmpty()) return;
-        ChargingOrder next = scheduleStrategy.selectOne(wq.stream().toList());
-        wq.remove(next);
-        pq.addLast(next);
-    }
 
     private static PileType toPileType(RequestMode mode) {
         return mode == RequestMode.FAST ? PileType.FAST : PileType.SLOW;

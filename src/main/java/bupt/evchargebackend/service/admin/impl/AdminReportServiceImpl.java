@@ -47,7 +47,7 @@ public class AdminReportServiceImpl implements AdminReportService {
             if (pileId == null || pileId.isEmpty()) {
                 throw new BusinessException(400, "单桩统计时 pileId 为必填");
             }
-            pileCondition = " AND b.pile_id = ?";
+            pileCondition = " AND pile_id = ?";
             params.add(pileId);
         }
 

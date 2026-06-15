@@ -3,6 +3,7 @@ package bupt.evchargebackend.service.admin.impl;
 import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.exception.ErrorCode;
 import bupt.evchargebackend.common.response.PageResult;
+import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminFaultService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -19,7 +20,7 @@ public class AdminFaultServiceImpl implements AdminFaultService {
     }
 
     @Override
-    public PageResult<Map<String, Object>> listFaults(int pageNum, int pageSize, Integer status) {
+    public Result<PageResult<Map<String, Object>>> listFaults(int pageNum, int pageSize, Integer status) {
         StringBuilder whereSql = new StringBuilder();
         List<Object> params = new ArrayList<>();
 
@@ -56,11 +57,11 @@ public class AdminFaultServiceImpl implements AdminFaultService {
             list.add(item);
         }
 
-        return PageResult.of(list, total != null ? total : 0, pageNum, pageSize);
+        return Result.success(PageResult.of(list, total != null ? total : 0, pageNum, pageSize));
     }
 
     @Override
-    public void resolveFault(String faultId, Integer resolveCode, String remark) {
+    public Result<Void> resolveFault(String faultId, Integer resolveCode, String remark) {
         List<String> results = jdbcTemplate.queryForList(
                 "SELECT fault_status FROM fault_record WHERE fault_id = ?", String.class, faultId);
         if (results.isEmpty()) {
@@ -74,5 +75,6 @@ public class AdminFaultServiceImpl implements AdminFaultService {
                 "UPDATE fault_record SET fault_status = 'RECOVERED', " +
                 "resolve_code = ?, remark = ?, recover_time = NOW() WHERE fault_id = ?",
                 resolveCode, remark, faultId);
+        return Result.success();
     }
 }

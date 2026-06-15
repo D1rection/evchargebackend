@@ -1,6 +1,7 @@
 package bupt.evchargebackend.service.admin.impl;
 
 import bupt.evchargebackend.common.exception.BusinessException;
+import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminReportService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -23,8 +24,8 @@ public class AdminReportServiceImpl implements AdminReportService {
     }
 
     @Override
-    public Map<String, Object> generateReport(String targetType, String pileId,
-                                              String timeRange, String startDate, String endDate) {
+    public Result<Map<String, Object>> generateReport(String targetType, String pileId,
+                                                      String timeRange, String startDate, String endDate) {
         Map<String, LocalDateTime> range = calculateTimeRange(timeRange, startDate, endDate);
         LocalDateTime start = range.get("start");
         LocalDateTime end = range.get("end");
@@ -83,13 +84,13 @@ public class AdminReportServiceImpl implements AdminReportService {
         result.put("totalServiceFee", toDouble(billData.get("totalServiceFee")));
         result.put("avgChargeDuration", toInt(billData.get("avgChargeDuration")));
         result.put("faultRate", toDouble(faultData.get("faultRate")));
-        return result;
+        return Result.success(result);
     }
 
     @Override
     public byte[] exportReport(String targetType, String pileId,
                                String timeRange, String startDate, String endDate) {
-        Map<String, Object> data = generateReport(targetType, pileId, timeRange, startDate, endDate);
+        Map<String, Object> data = generateReport(targetType, pileId, timeRange, startDate, endDate).getData();
         StringBuilder csv = new StringBuilder();
         csv.append("指标,值\n");
         for (Map.Entry<String, Object> entry : data.entrySet()) {

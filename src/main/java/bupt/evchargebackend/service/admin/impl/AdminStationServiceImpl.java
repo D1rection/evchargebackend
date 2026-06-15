@@ -1,6 +1,7 @@
 package bupt.evchargebackend.service.admin.impl;
 
 import bupt.evchargebackend.common.exception.BusinessException;
+import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.PileRequest;
 import bupt.evchargebackend.dto.StationConfigRequest;
 import bupt.evchargebackend.entity.pile.ChargingPile;
@@ -30,19 +31,19 @@ public class AdminStationServiceImpl implements AdminStationService {
     }
 
     @Override
-    public Map<String, Object> getStationConfig() {
+    public Result<Map<String, Object>> getStationConfig() {
         List<StationConfig> configs = stationConfigMapper.selectList(null);
         if (configs.isEmpty()) {
-            return Map.of("fastCount", 0, "slowCount", 0, "waitingSpotsPerPile", 2);
+            return Result.success(Map.of("fastCount", 0, "slowCount", 0, "waitingSpotsPerPile", 2));
         }
         StationConfig config = configs.get(0);
-        return Map.of("fastCount", config.getFastCount(),
+        return Result.success(Map.of("fastCount", config.getFastCount(),
                       "slowCount", config.getSlowCount(),
-                      "waitingSpotsPerPile", config.getWaitingSpotsPerPile());
+                      "waitingSpotsPerPile", config.getWaitingSpotsPerPile()));
     }
 
     @Override
-    public void updateStationConfig(StationConfigRequest request) {
+    public Result<Void> updateStationConfig(StationConfigRequest request) {
         List<StationConfig> configs = stationConfigMapper.selectList(null);
         StationConfig config = configs.isEmpty() ? new StationConfig() : configs.get(0);
         config.setFastCount(request.getFastCount());
@@ -53,10 +54,11 @@ public class AdminStationServiceImpl implements AdminStationService {
         } else {
             stationConfigMapper.updateById(config);
         }
+        return Result.success();
     }
 
     @Override
-    public List<Map<String, Object>> listDevices() {
+    public Result<List<Map<String, Object>>> listDevices() {
         List<ChargingPile> piles = chargingPileMapper.selectList(null);
         List<Map<String, Object>> result = new ArrayList<>();
         int index = 1;
@@ -67,11 +69,11 @@ public class AdminStationServiceImpl implements AdminStationService {
                               "pileType", pile.getPileType().name(),
                               "powerKw", pile.getPowerKw()));
         }
-        return result;
+        return Result.success(result);
     }
 
     @Override
-    public Map<String, Object> addDevice(PileRequest request) {
+    public Result<Map<String, Object>> addDevice(PileRequest request) {
         String type = request.getPileType().toUpperCase();
         String prefix = type.equals("FAST") ? "FP" : "SP";
         String suffix = UUID.randomUUID().toString().substring(0, 3).toUpperCase();
@@ -95,11 +97,11 @@ public class AdminStationServiceImpl implements AdminStationService {
         pile.setTotalChargeMinutes(0);
         chargingPileMapper.insert(pile);
 
-        return Map.of("pileId", pileId);
+        return Result.success(Map.of("pileId", pileId));
     }
 
     @Override
-    public void updateDevice(String pileId, PileRequest request) {
+    public Result<Void> updateDevice(String pileId, PileRequest request) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);
         if (pile == null) {
             throw new BusinessException(404, "充电桩不存在");
@@ -109,14 +111,16 @@ public class AdminStationServiceImpl implements AdminStationService {
             pile.setPileType(PileType.valueOf(request.getPileType().toUpperCase()));
         if (request.getPowerKw() != null) pile.setPowerKw(request.getPowerKw());
         chargingPileMapper.updateById(pile);
+        return Result.success();
     }
 
     @Override
-    public void deleteDevice(String pileId) {
+    public Result<Void> deleteDevice(String pileId) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);
         if (pile == null) {
             throw new BusinessException(404, "充电桩不存在");
         }
         chargingPileMapper.deleteById(pileId);
+        return Result.success();
     }
 }

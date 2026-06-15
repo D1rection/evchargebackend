@@ -1,6 +1,7 @@
 package bupt.evchargebackend.service.admin.impl;
 
 import bupt.evchargebackend.common.response.PageResult;
+import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminMonitorService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -18,7 +19,7 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
     }
 
     @Override
-    public PageResult<Map<String, Object>> listPileStatus(Integer pageNum, Integer pageSize) {
+    public Result<PageResult<Map<String, Object>>> listPileStatus(Integer pageNum, Integer pageSize) {
         String baseSql = """
                 SELECT
                     cp.pile_id AS pileId,
@@ -42,7 +43,7 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
 
         if (pageNum == null || pageSize == null) {
             List<Map<String, Object>> all = jdbcTemplate.queryForList(baseSql);
-            return PageResult.of(all, all.size(), 1, all.size());
+            return Result.success(PageResult.of(all, all.size(), 1, all.size()));
         }
 
         int offset = (pageNum - 1) * pageSize;
@@ -56,11 +57,11 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
             if (val instanceof BigDecimal bd) row.put("totalCapacity", bd.doubleValue());
         }
 
-        return PageResult.of(list, total != null ? total : 0, pageNum, pageSize);
+        return Result.success(PageResult.of(list, total != null ? total : 0, pageNum, pageSize));
     }
 
     @Override
-    public Map<String, Object> getDashboard() {
+    public Result<Map<String, Object>> getDashboard() {
         Long todayChargeCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM charging_session WHERE DATE(start_time) = CURDATE()", Long.class);
         BigDecimal todayRevenue = jdbcTemplate.queryForObject(
@@ -77,6 +78,6 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         result.put("todayRevenue", todayRevenue != null ? todayRevenue.doubleValue() : 0.0);
         result.put("onlineRate", onlineRate != null ? onlineRate.doubleValue() : 0.0);
         result.put("faultCount", faultCount != null ? faultCount.intValue() : 0);
-        return result;
+        return Result.success(result);
     }
 }

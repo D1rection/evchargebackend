@@ -2,6 +2,7 @@ package bupt.evchargebackend.service.admin.impl;
 
 import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.jwt.JwtUtil;
+import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.entity.user.UserAccount;
 import bupt.evchargebackend.entity.user.enums.UserRole;
 import bupt.evchargebackend.mapper.user.UserAccountMapper;
@@ -25,7 +26,7 @@ public class AdminAccountServiceImpl implements AdminAccountService {
     }
 
     @Override
-    public Map<String, Object> register(String userName, String password) {
+    public Result<Map<String, Object>> register(String userName, String password) {
         LambdaQueryWrapper<UserAccount> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserAccount::getUsername, userName);
         if (userAccountMapper.selectCount(wrapper) > 0) {
@@ -39,13 +40,13 @@ public class AdminAccountServiceImpl implements AdminAccountService {
         account.setRole(UserRole.ADMIN);
         userAccountMapper.insert(account);
 
-        return Map.of("userId", account.getUserId(),
+        return Result.success(Map.of("userId", account.getUserId(),
                       "userName", account.getUsername(),
-                      "role", "ADMIN");
+                      "role", "ADMIN"));
     }
 
     @Override
-    public Map<String, Object> login(String userName, String password) {
+    public Result<Map<String, Object>> login(String userName, String password) {
         LambdaQueryWrapper<UserAccount> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserAccount::getUsername, userName);
         UserAccount account = userAccountMapper.selectOne(wrapper);
@@ -56,6 +57,6 @@ public class AdminAccountServiceImpl implements AdminAccountService {
         }
 
         String token = jwtUtil.generate(account.getUserId(), account.getRole().name());
-        return Map.of("userName", account.getUsername(), "token", token);
+        return Result.success(Map.of("userName", account.getUsername(), "token", token));
     }
 }

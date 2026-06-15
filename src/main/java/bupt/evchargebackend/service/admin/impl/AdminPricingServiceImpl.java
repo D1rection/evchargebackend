@@ -1,5 +1,6 @@
 package bupt.evchargebackend.service.admin.impl;
 
+import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
 import bupt.evchargebackend.service.admin.AdminPricingService;
@@ -17,7 +18,7 @@ public class AdminPricingServiceImpl implements AdminPricingService {
     }
 
     @Override
-    public Map<String, Object> getPricing() {
+    public Result<Map<String, Object>> getPricing() {
         List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(null);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -45,6 +46,6 @@ public class AdminPricingServiceImpl implements AdminPricingService {
         }
 
         result.put("serviceFeeValue", serviceFeeValue);
-        return result;
+        return Result.success(result);
     }
 }

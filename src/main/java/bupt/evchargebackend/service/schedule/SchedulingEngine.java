@@ -63,6 +63,16 @@ public class SchedulingEngine {
         return waitQueue(type).size();
     }
 
+    /** 查找指定订单在等候区中的位置（0-based），-1 表示不在队列中。 */
+    public int waitPosition(PileType type, String orderId) {
+        int i = 0;
+        for (var o : waitQueue(type)) {
+            if (o.getOrderId().equals(orderId)) return i;
+            i++;
+        }
+        return -1;
+    }
+
     public ChargingOrder pollWait(PileType type) {
         return waitQueue(type).poll();
     }
@@ -97,6 +107,16 @@ public class SchedulingEngine {
 
     public int pileQueueSize(String pileId) {
         return pileQueue(pileId).size();
+    }
+
+    /** 查找指定订单在桩队列中的位置（0-based），-1 表示不在队列中。 */
+    public int pilePosition(String pileId, String orderId) {
+        int i = 0;
+        for (var o : pileQueue(pileId)) {
+            if (o.getOrderId().equals(orderId)) return i;
+            i++;
+        }
+        return -1;
     }
 
     public List<ChargingOrder> getPileQueue(String pileId) {

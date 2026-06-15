@@ -5,6 +5,7 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 
@@ -31,6 +32,11 @@ public interface ChargingService {
      * @return 匹配的时段列表（通常为 1 条）
      */
     Result<List<Map<String, Object>>> getPeriodByTime(String time);
+
+    /**
+     * 查看车辆队列状态：查询车辆在等候区或充电区的排队位置。
+     */
+    Result<QueueStatusResponse> queueStatus(String carId);
 
     ChargingOrder modifyAmount(String carId, BigDecimal amount);
 

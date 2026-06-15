@@ -7,6 +7,7 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
 import bupt.evchargebackend.entity.queue.QueueEntry;
@@ -246,18 +247,15 @@ public class ChargingServiceImpl implements ChargingService {
 
         List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(null);
         List<Map<String, Object>> result = new java.util.ArrayList<>();
-
         for (BillingRatePeriod p : periods) {
             int start = parseMinutes(p.getStartTime());
             int end = parseMinutes(p.getEndTime());
-
             boolean matched;
             if (start <= end) {
                 matched = start <= minutes && minutes < end;
             } else {
                 matched = minutes >= start || minutes < end;
             }
-
             if (matched) {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("periodName", p.getPeriodName().name());
@@ -268,12 +266,72 @@ public class ChargingServiceImpl implements ChargingService {
                 result.add(item);
             }
         }
-
         if (result.isEmpty()) {
             throw new BusinessException(400, "未找到匹配的计费时段");
         }
-
         return Result.success(result);
+    }
+
+    @Override
+    public Result<QueueStatusResponse> queueStatus(String carId) {
+        // 1. 校验 carId
+        if (!hasText(carId)) {
+            return Result.error(400, "车辆 ID 不能为空");
+        // 2. 查找最近订单
+        ChargingOrder order = chargingOrderMapper.selectOne(
+                new QueryWrapper<ChargingOrder>()
+                        .eq("car_id", carId)
+                        .orderByDesc("created_at")
+                        .last("LIMIT 1")
+        );
+        if (order == null) {
+            return Result.error(404, "充电请求不存在");
+        // 3. 按状态计算位置
+        OrderStatus status = order.getOrderStatus();
+        String carState;
+        int queueNum;
+        int before;
+        String assignedPileId = null;
+        switch (status) {
+            case WAITING -> {
+                carState = "waiting";
+                PileType pt = order.getRequestMode() == RequestMode.FAST ? PileType.FAST : PileType.SLOW;
+                int pos = engine.waitPosition(pt, order.getOrderId());
+                if (pos < 0) pos = 0;
+                before = pos;
+                queueNum = pos + 1;
+            }
+            case CALLED -> {
+                carState = "called";
+                assignedPileId = order.getPileId();
+                int pos = engine.pilePosition(assignedPileId, order.getOrderId());
+                if (pos < 0) pos = 0;
+                before = pos;
+                queueNum = pos + 1;
+            }
+            case CHARGING -> {
+                carState = "charging";
+                assignedPileId = order.getPileId();
+                queueNum = 0;
+                before = 0;
+            }
+            default -> {
+                carState = "done";
+                queueNum = 0;
+                before = 0;
+            }
+        }
+
+        // 4. 组装响应
+        QueueStatusResponse resp = new QueueStatusResponse();
+        resp.setCarState(carState);
+        resp.setQueueNum(queueNum);
+        resp.setCarNumberBeforePosition(before);
+        resp.setRequestTime(order.getCreatedAt() != null
+                ? order.getCreatedAt().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                : null);
+        resp.setAssignedPileNum(assignedPileId);
+        return Result.success(resp);
     }
 
     @Override

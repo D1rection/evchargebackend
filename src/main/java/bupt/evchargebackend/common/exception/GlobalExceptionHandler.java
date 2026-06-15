@@ -1,6 +1,8 @@
 package bupt.evchargebackend.common.exception;
 
 import bupt.evchargebackend.common.response.Result;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
@@ -21,6 +23,8 @@ import org.springframework.web.servlet.resource.NoResourceFoundException;
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     /** 处理已知的业务规则违反异常。 */
     @ExceptionHandler(BusinessException.class)
@@ -58,6 +62,7 @@ public class GlobalExceptionHandler {
     /** 兜底处理：未知的服务端错误。 */
     @ExceptionHandler(Exception.class)
     public Result<Void> handleException(Exception e) {
+        log.error("未处理的异常", e);
         return Result.error(500, "服务器内部错误");
     }
 }

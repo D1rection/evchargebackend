@@ -277,6 +277,8 @@ public class ChargingServiceImpl implements ChargingService {
         // 1. 校验 carId
         if (!hasText(carId)) {
             return Result.error(400, "车辆 ID 不能为空");
+        }
+
         // 2. 查找最近订单
         ChargingOrder order = chargingOrderMapper.selectOne(
                 new QueryWrapper<ChargingOrder>()
@@ -286,6 +288,8 @@ public class ChargingServiceImpl implements ChargingService {
         );
         if (order == null) {
             return Result.error(404, "充电请求不存在");
+        }
+
         // 3. 按状态计算位置
         OrderStatus status = order.getOrderStatus();
         String carState;

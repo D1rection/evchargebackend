@@ -6,6 +6,7 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStateResponse;
@@ -79,6 +80,14 @@ public class ChargingController {
     @PostMapping("/end")
     public Result<ChargingEndResponse> end(@Valid @RequestBody ChargingEndRequest request) {
         return chargingService.end(request);
+    }
+
+    /**
+     * 取消充电申请：用户在等候区或桩队列中取消已提交的申请。
+     */
+    @PostMapping("/cancel")
+    public Result<ChargingEndResponse> cancel(@Valid @RequestBody ChargingCancelRequest request) {
+        return chargingService.cancel(request);
     }
 
     @PostMapping("/modify-amount")

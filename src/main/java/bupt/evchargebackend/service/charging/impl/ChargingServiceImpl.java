@@ -6,6 +6,7 @@ import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
+import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
@@ -550,6 +551,54 @@ public class ChargingServiceImpl implements ChargingService {
         }
         engine.onPileReleased(pileId, pileType);
         tryFillFromWaiting(pileId, pileType);
+
+        ChargingEndResponse resp = new ChargingEndResponse();
+        resp.setResult(1);
+        return Result.success(resp);
+    }
+
+    @Override
+    public Result<ChargingEndResponse> cancel(ChargingCancelRequest request) {
+        // 1. 校验 carId
+        String carId = request.getCarId();
+        if (!hasText(carId)) {
+            return Result.error(400, "车辆 ID 不能为空");
+        }
+
+        // 2. 查找 WAITING 或 CALLED 订单
+        ChargingOrder order = chargingOrderMapper.selectOne(
+                new QueryWrapper<ChargingOrder>()
+                        .eq("car_id", carId)
+                        .in("order_status", List.of("WAITING", "CALLED"))
+                        .orderByDesc("created_at")
+                        .last("LIMIT 1")
+        );
+        if (order == null) {
+            return Result.error(404, "没有可取消的充电请求");
+        }
+
+        // 3. 从队列移除 + 删 queue_entry
+        String pileId = order.getPileId();
+        String orderId = order.getOrderId();
+
+        if (order.getOrderStatus() == OrderStatus.WAITING) {
+            engine.removeFromWait(carId);
+        } else {
+            engine.removeFromAllPileQueues(carId);
+        }
+        queueEntryMapper.delete(
+                new QueryWrapper<QueueEntry>().eq("order_id", orderId)
+        );
+
+        // 4. 更新订单状态
+        order.setOrderStatus(OrderStatus.CANCELLED);
+        chargingOrderMapper.updateById(order);
+
+        // 5. CALLED 取消后尝试补位
+        if (pileId != null) {
+            ChargingPile pile = chargingPileMapper.selectById(pileId);
+            if (pile != null) tryFillFromWaiting(pileId, pile.getPileType());
+        }
 
         ChargingEndResponse resp = new ChargingEndResponse();
         resp.setResult(1);

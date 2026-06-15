@@ -65,11 +65,9 @@ public class AccountServiceImpl implements AccountService {
         car.setBatteryCapacityKwh(batteryCapacityKwh);
         carMapper.insert(car);
 
-        Map<String, Object> data = buildUserData(account);
-        data.put("userId", userId);
-        data.put("role", userRole.name());
+        Map<String, Object> data = new LinkedHashMap<>();
         data.put("carId", finalCarId);
-        data.put("carNo", finalCarNo);
+        data.put("userName", username);
         return data;
     }
 

@@ -106,7 +106,7 @@ class ChargingServiceImplTest {
         doReturn(car).when(carMapper).selectById(CAR_ID);
         doReturn(0L).when(chargingOrderMapper).selectCount(any());
         doReturn(NOW).when(timeProvider).now();
-        doReturn(List.of()).when(billingRatePeriodMapper).selectList(any());
+        doReturn(mutableList(period("00:00", "24:00", "1.0", "0"))).when(billingRatePeriodMapper).selectList(any());
         doReturn(List.of()).when(engine).getPileQueue(anyString());
     }
 

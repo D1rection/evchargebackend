@@ -130,28 +130,20 @@ public class ChargingServiceImpl implements ChargingService {
             return Result.error(400, "该车辆已有进行中的订单");
         }
 
-        // 5. 计算预估费用和用时
+        // 5. 创建订单（先设 WAITING，调度后更新预估值）
         PileType pileType = mode == RequestMode.FAST ? PileType.FAST : PileType.SLOW;
-        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
-        BigDecimal rate = lookupRate(pileType);
-        BigDecimal estimatedFee = amount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
-        int estimatedMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(60)).intValue();
-
-        // 6. 创建订单（持久化预估费用和用时）
         ChargingOrder order = new ChargingOrder();
         order.setOrderId(UUID.randomUUID().toString());
         order.setOrderNo("ORD-" + System.currentTimeMillis());
         order.setCarId(carId);
         order.setRequestMode(mode);
         order.setTargetKwh(amount);
-        order.setEstimatedFee(estimatedFee);
-        order.setEstimatedMinutes(estimatedMinutes);
         order.setOrderStatus(OrderStatus.WAITING);
         chargingOrderMapper.insert(order);
 
-        // 7. 调度：有故障时订单进入等候区（故障队列优先分发），否则选最优桩
+        // 6. 调度
         String selectedPileId = null;
+        ChargingPile bestPile = null;
         String waitQueueKey = pileType == PileType.FAST ? "FAST" : "SLOW";
         if (engine.hasAnyFault()) {
             engine.enqueueWait(order);
@@ -164,13 +156,12 @@ public class ChargingServiceImpl implements ChargingService {
             );
             if (!piles.isEmpty()) {
                 piles.sort(Comparator.comparingLong(this::totalActiveMinutes));
-                ChargingPile best = piles.getFirst();
-                if (engine.addToPileQueue(best.getPileId(), order)) {
+                bestPile = piles.getFirst();
+                if (engine.addToPileQueue(bestPile.getPileId(), order)) {
                     order.setOrderStatus(OrderStatus.CALLED);
-                    order.setPileId(best.getPileId());
-                    chargingOrderMapper.updateById(order);
-                    insertQueueEntry("PILE", best.getPileId(), order.getOrderId());
-                    selectedPileId = best.getPileId();
+                    order.setPileId(bestPile.getPileId());
+                    selectedPileId = bestPile.getPileId();
+                    insertQueueEntry("PILE", selectedPileId, order.getOrderId());
                 }
             }
             if (selectedPileId == null) {
@@ -178,6 +169,25 @@ public class ChargingServiceImpl implements ChargingService {
                 insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
             }
         }
+
+        // 7. 调度后计算预估（含等待时间）
+        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
+        int chargeMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(60)).intValue();
+        int estimatedMinutes = selectedPileId != null
+                ? (int) totalActiveMinutes(bestPile) : chargeMinutes;
+        if (estimatedMinutes < chargeMinutes) estimatedMinutes = chargeMinutes;
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+        LocalDateTime estimateEnd = timeProvider.now().plusMinutes(estimatedMinutes);
+        FeeResult feeResult = calculateFees(power, amount, timeProvider.now(), estimateEnd, periods);
+        BigDecimal estimatedFee = feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP);
+
+        order.setEstimatedFee(estimatedFee);
+        order.setEstimatedMinutes(estimatedMinutes);
+        chargingOrderMapper.updateById(order);
 
         // 8. 组装响应
         OrderStatus status = order.getOrderStatus();
@@ -398,11 +408,10 @@ public class ChargingServiceImpl implements ChargingService {
 
             long elapsedSeconds = Duration.between(session.getStartTime(), timeProvider.now()).getSeconds();
             if (elapsedSeconds < 0) elapsedSeconds = 0;
-            long elapsedMinutes = elapsedSeconds / 60;
 
             BigDecimal maxCharge = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
-            BigDecimal estimatedKwh = power.multiply(BigDecimal.valueOf(elapsedMinutes))
-                    .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
+            BigDecimal estimatedKwh = power.multiply(BigDecimal.valueOf(elapsedSeconds))
+                    .divide(BigDecimal.valueOf(3600), 10, RoundingMode.HALF_UP);
             chargedKwh = estimatedKwh.min(maxCharge).setScale(2, RoundingMode.HALF_UP);
             duration = formatDuration(elapsedSeconds);
         } else {
@@ -596,27 +605,6 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     /** 查询当前时段的电价 + 服务费（元/kWh）。 */
-    private BigDecimal lookupRate(PileType pileType) {
-        int nowMin = timeProvider.now().getHour() * 60 + timeProvider.now().getMinute();
-        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
-                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
-        );
-        for (var p : periods) {
-            int start = parseMinutes(p.getStartTime());
-            int end = parseMinutes(p.getEndTime());
-            if (start <= end) {
-                if (nowMin >= start && nowMin < end) {
-                    return p.getElectricityPrice().add(p.getServicePrice());
-                }
-            } else {
-                if (nowMin >= start || nowMin < end) {
-                    return p.getElectricityPrice().add(p.getServicePrice());
-                }
-            }
-        }
-        return new BigDecimal("1.0");
-    }
-
     /** 将 HH:mm 格式转为当天分钟数。 */
     private static int parseMinutes(String time) {
         if (time == null || !time.matches("\\d{1,2}:\\d{2}")) {
@@ -818,10 +806,10 @@ public class ChargingServiceImpl implements ChargingService {
             LocalDateTime sliceEnd = periodEnd.isBefore(end) ? periodEnd : end;
             if (sliceEnd.equals(cursor)) break;
 
-            long sliceMinutes = Duration.between(cursor, sliceEnd).toMinutes();
+            long sliceSeconds = Duration.between(cursor, sliceEnd).getSeconds();
 
-            BigDecimal kwh = power.multiply(BigDecimal.valueOf(sliceMinutes))
-                    .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
+            BigDecimal kwh = power.multiply(BigDecimal.valueOf(sliceSeconds))
+                    .divide(BigDecimal.valueOf(3600), 10, RoundingMode.HALF_UP);
 
             BigDecimal remaining = target.subtract(totalKwh);
             if (kwh.compareTo(remaining) > 0) kwh = remaining;

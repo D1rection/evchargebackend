@@ -152,7 +152,7 @@ public class ChargingServiceImpl implements ChargingService {
 
         // 8. 组装响应
         OrderStatus status = order.getOrderStatus();
-        String carPosition = status == OrderStatus.CHARGING ? "充电区" : "等候区";
+        String carPosition = status == OrderStatus.WAITING ? "等候区" : "充电区";
         String carState = status.name().toLowerCase();
         int queueNum;
         if (selectedPileId != null) {

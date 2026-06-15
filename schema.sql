@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS user_account (
+CREATE TABLE user_account (
     user_id      VARCHAR(36)  PRIMARY KEY,
     username     VARCHAR(50)  NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS user_account (
     updated_at   DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS car (
+CREATE TABLE car (
     car_id              VARCHAR(36)  PRIMARY KEY,
     user_id             VARCHAR(36)  NOT NULL,
     car_no              VARCHAR(20)  NOT NULL,
@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS car (
     FOREIGN KEY (user_id) REFERENCES user_account(user_id)
 );
 
-CREATE TABLE IF NOT EXISTS charging_pile (
+CREATE TABLE charging_pile (
     pile_id              VARCHAR(36)  PRIMARY KEY,
     pile_no              VARCHAR(20)  NOT NULL COMMENT '对外展示',
     pile_type            VARCHAR(10)  NOT NULL COMMENT 'FAST / SLOW',
@@ -32,7 +32,7 @@ CREATE TABLE IF NOT EXISTS charging_pile (
     updated_at           DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS charging_order (
+CREATE TABLE charging_order (
     order_id          VARCHAR(36)  PRIMARY KEY,
     order_no          VARCHAR(50)  NOT NULL COMMENT '对外展示',
     car_id            VARCHAR(36)  NOT NULL,
@@ -46,7 +46,7 @@ CREATE TABLE IF NOT EXISTS charging_order (
     FOREIGN KEY (car_id) REFERENCES car(car_id)
 );
 
-CREATE TABLE IF NOT EXISTS charging_session (
+CREATE TABLE charging_session (
     session_id      VARCHAR(36)  PRIMARY KEY,
     order_id        VARCHAR(36)  NOT NULL,
     car_id          VARCHAR(36)  NOT NULL,
@@ -63,7 +63,7 @@ CREATE TABLE IF NOT EXISTS charging_session (
     FOREIGN KEY (pile_id) REFERENCES charging_pile(pile_id)
 );
 
-CREATE TABLE IF NOT EXISTS bill (
+CREATE TABLE bill (
     bill_id          VARCHAR(36)  PRIMARY KEY,
     bill_no          VARCHAR(50)  NOT NULL COMMENT '对外展示',
     order_id         VARCHAR(36)  NOT NULL,
@@ -85,7 +85,7 @@ CREATE TABLE IF NOT EXISTS bill (
     FOREIGN KEY (pile_id) REFERENCES charging_pile(pile_id)
 );
 
-CREATE TABLE IF NOT EXISTS billing_rate_period (
+CREATE TABLE billing_rate_period (
     period_id         VARCHAR(36)  PRIMARY KEY,
     pile_type         VARCHAR(10)  NOT NULL COMMENT 'FAST / SLOW',
     period_name       VARCHAR(10)  NOT NULL COMMENT 'PEAK / NORMAL / VALLEY',
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS billing_rate_period (
     updated_at        DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-CREATE TABLE IF NOT EXISTS fault_record (
+CREATE TABLE fault_record (
     fault_id     VARCHAR(36)  PRIMARY KEY,
     pile_id      VARCHAR(36)  NOT NULL,
     session_id   VARCHAR(36)  COMMENT '可为空',
@@ -117,7 +117,7 @@ CREATE TABLE IF NOT EXISTS fault_record (
     FOREIGN KEY (order_id) REFERENCES charging_order(order_id)
 );
 
-CREATE TABLE IF NOT EXISTS station_config (
+CREATE TABLE station_config (
     id                   INT         AUTO_INCREMENT PRIMARY KEY,
     fast_count           INT         NOT NULL DEFAULT 0 COMMENT '快充桩数量',
     slow_count           INT         NOT NULL DEFAULT 0 COMMENT '慢充桩数量',

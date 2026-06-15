@@ -3,9 +3,6 @@ spring:
     url: jdbc:mysql://db:3306/evcharge?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
     username: root
     password: ${DB_PASSWORD}
-  sql:
-    init:
-      mode: always
 
 mybatis-plus:
   configuration:

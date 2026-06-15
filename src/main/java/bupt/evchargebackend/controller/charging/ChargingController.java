@@ -6,6 +6,7 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
@@ -60,6 +61,14 @@ public class ChargingController {
     @GetMapping("/queue-position")
     public Result<QueueStatusResponse> queuePosition(@RequestParam String carId) {
         return chargingService.queueStatus(carId);
+    }
+
+    /**
+     * 查看充电状态：查询车辆当前充电进度、费用和时段电价。
+     */
+    @GetMapping("/state")
+    public Result<ChargingStateResponse> state(@RequestParam String carId) {
+        return chargingService.chargingState(carId);
     }
 
     @PostMapping("/modify-amount")

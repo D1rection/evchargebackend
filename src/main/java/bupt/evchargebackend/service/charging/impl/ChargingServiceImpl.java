@@ -7,6 +7,7 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
@@ -33,6 +34,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
@@ -339,6 +342,99 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     @Override
+    public Result<ChargingStateResponse> chargingState(String carId) {
+        // 1. 校验 carId
+        if (!hasText(carId)) {
+            return Result.error(400, "车辆 ID 不能为空");
+        }
+
+        // 2. 查找最近充电会话
+        ChargingSession session = chargingSessionMapper.selectOne(
+                new QueryWrapper<ChargingSession>()
+                        .eq("car_id", carId)
+                        .orderByDesc("created_at")
+                        .last("LIMIT 1")
+        );
+        ChargingStateResponse resp = new ChargingStateResponse();
+        resp.setCarId(carId);
+        if (session == null) {
+            resp.setStatus("none");
+            return Result.success(resp);
+        }
+
+        // 3. 映射状态 + 基础字段
+        String status = switch (session.getSessionStatus()) {
+            case CHARGING -> "charging";
+            case FINISHED -> "completed";
+            case INTERRUPTED -> "interrupted";
+        };
+        resp.setStatus(status);
+        resp.setOrderId(session.getOrderId());
+        resp.setPileNum(session.getPileId());
+        resp.setStartTime(session.getStartTime() != null
+                ? session.getStartTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                : null);
+
+        // 4. 计算充电量和时长
+        BigDecimal chargedKwh = null;
+        String duration = null;
+
+        if (session.getSessionStatus() == SessionStatus.CHARGING) {
+            ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
+            BigDecimal power = BigDecimal.valueOf(pile != null ? pile.getPowerKw() : 0);
+
+            long elapsedSeconds = Duration.between(session.getStartTime(), timeProvider.now()).getSeconds();
+            if (elapsedSeconds < 0) elapsedSeconds = 0;
+            long elapsedMinutes = elapsedSeconds / 60;
+
+            BigDecimal maxCharge = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+            BigDecimal estimatedKwh = power.multiply(BigDecimal.valueOf(elapsedMinutes))
+                    .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
+            chargedKwh = estimatedKwh.min(maxCharge).setScale(2, RoundingMode.HALF_UP);
+            duration = formatDuration(elapsedSeconds);
+        } else {
+            chargedKwh = session.getChargedKwh();
+            if (session.getStartTime() != null && session.getEndTime() != null) {
+                long seconds = Duration.between(session.getStartTime(), session.getEndTime()).getSeconds();
+                duration = formatDuration(Math.max(0, seconds));
+            }
+        }
+
+        resp.setCurrentAmount(chargedKwh != null ? chargedKwh : BigDecimal.ZERO);
+        resp.setCurrentDuration(duration);
+
+        // 5. 计算费用和电价
+        ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
+        PileType pileType = pile != null ? pile.getPileType() : null;
+        BigDecimal power = pile != null ? BigDecimal.valueOf(pile.getPowerKw()) : BigDecimal.ZERO;
+        BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+
+        LocalDateTime calcStart = session.getStartTime();
+        LocalDateTime calcEnd = session.getSessionStatus() == SessionStatus.CHARGING
+                ? timeProvider.now() : session.getEndTime();
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+
+        if (calcStart != null && calcEnd != null && pileType != null) {
+            FeeResult feeResult = calculateFees(power, target, calcStart, calcEnd, periods);
+            resp.setCurrentAmount(feeResult.totalKwh.setScale(2, RoundingMode.HALF_UP));
+            resp.setCurrentChargeFee(feeResult.chargeFee.setScale(2, RoundingMode.HALF_UP));
+            resp.setCurrentServiceFee(feeResult.serviceFee.setScale(2, RoundingMode.HALF_UP));
+            resp.setTotalCurrentFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+
+            if (session.getSessionStatus() == SessionStatus.CHARGING) {
+                LocalTime nowTime = timeProvider.now().toLocalTime();
+                resp.setCurrentPeriodPrice(periodPriceAt(periods, nowTime));
+                resp.setNextPeriodPrice(nextPeriodPrice(periods, nowTime));
+            }
+        }
+
+        return Result.success(resp);
+    }
+
+    @Override
     public ChargingOrder modifyAmount(String carId, BigDecimal amount) {
         if (!hasText(carId)) {
             throw new BusinessException("carId is required");
@@ -411,7 +507,7 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     /** 将 HH:mm 格式转为当天分钟数。 */
-    private int parseMinutes(String time) {
+    private static int parseMinutes(String time) {
         if (time == null || !time.matches("\\d{1,2}:\\d{2}")) {
             throw new BusinessException(400, "时间格式无效，应为 HH:mm");
         }
@@ -476,5 +572,103 @@ public class ChargingServiceImpl implements ChargingService {
         entry.setQueueKey(queueKey);
         entry.setOrderId(orderId);
         queueEntryMapper.insert(entry);
+    }
+
+    private static FeeResult calculateFees(BigDecimal power, BigDecimal target,
+                                            LocalDateTime start, LocalDateTime end,
+                                            List<BillingRatePeriod> periods) {
+        BigDecimal totalKwh = BigDecimal.ZERO;
+        BigDecimal chargeFee = BigDecimal.ZERO;
+        BigDecimal serviceFee = BigDecimal.ZERO;
+
+        LocalDateTime cursor = start;
+        while (cursor.isBefore(end) && totalKwh.compareTo(target) < 0) {
+            int currentMinute = cursor.getHour() * 60 + cursor.getMinute();
+
+            BillingRatePeriod period = findPeriod(periods, currentMinute);
+            if (period == null) break;
+
+            int ps = parseMinutes(period.getStartTime());
+            int pe = parseMinutes(period.getEndTime());
+
+            LocalDateTime periodEnd;
+            if (ps <= pe) {
+                periodEnd = cursor.toLocalDate().atStartOfDay().plusMinutes(pe);
+            } else {
+                int cm = cursor.getHour() * 60 + cursor.getMinute();
+                if (cm >= ps) {
+                    periodEnd = cursor.toLocalDate().atStartOfDay().plusDays(1).plusMinutes(pe);
+                } else {
+                    periodEnd = cursor.toLocalDate().atStartOfDay().plusMinutes(pe);
+                }
+            }
+
+            LocalDateTime sliceEnd = periodEnd.isBefore(end) ? periodEnd : end;
+            if (sliceEnd.equals(cursor)) break;
+
+            long sliceMinutes = Duration.between(cursor, sliceEnd).toMinutes();
+
+            BigDecimal kwh = power.multiply(BigDecimal.valueOf(sliceMinutes))
+                    .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
+
+            BigDecimal remaining = target.subtract(totalKwh);
+            if (kwh.compareTo(remaining) > 0) kwh = remaining;
+
+            chargeFee = chargeFee.add(kwh.multiply(period.getElectricityPrice()));
+            serviceFee = serviceFee.add(kwh.multiply(period.getServicePrice()));
+            totalKwh = totalKwh.add(kwh);
+
+            cursor = sliceEnd;
+        }
+
+        return new FeeResult(totalKwh, chargeFee, serviceFee);
+    }
+
+    private static BillingRatePeriod findPeriod(List<BillingRatePeriod> periods, int minuteOfDay) {
+        for (BillingRatePeriod p : periods) {
+            int start = parseMinutes(p.getStartTime());
+            int end = parseMinutes(p.getEndTime());
+            if (start <= end) {
+                if (minuteOfDay >= start && minuteOfDay < end) return p;
+            } else {
+                if (minuteOfDay >= start || minuteOfDay < end) return p;
+            }
+        }
+        return null;
+    }
+
+    private static BigDecimal periodPriceAt(List<BillingRatePeriod> periods, LocalTime time) {
+        int m = time.getHour() * 60 + time.getMinute();
+        BillingRatePeriod p = findPeriod(periods, m);
+        return p != null ? p.getElectricityPrice().add(p.getServicePrice()) : BigDecimal.ONE;
+    }
+
+    private static BigDecimal nextPeriodPrice(List<BillingRatePeriod> periods, LocalTime time) {
+        int m = time.getHour() * 60 + time.getMinute();
+        BillingRatePeriod best = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (BillingRatePeriod p : periods) {
+            int start = parseMinutes(p.getStartTime());
+            int dist;
+            if (start > m) {
+                dist = start - m;
+            } else {
+                dist = start + 1440 - m;
+            }
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = p;
+            }
+        }
+        return best != null ? best.getElectricityPrice().add(best.getServicePrice()) : BigDecimal.ONE;
+    }
+
+    private record FeeResult(BigDecimal totalKwh, BigDecimal chargeFee, BigDecimal serviceFee) {}
+
+    private static String formatDuration(long seconds) {
+        long h = seconds / 3600;
+        long m = (seconds % 3600) / 60;
+        long s = seconds % 60;
+        return String.format("%02d:%02d:%02d", h, m, s);
     }
 }

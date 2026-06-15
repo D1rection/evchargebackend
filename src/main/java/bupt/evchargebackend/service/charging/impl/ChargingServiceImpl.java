@@ -597,25 +597,23 @@ public class ChargingServiceImpl implements ChargingService {
 
     /** 查询当前时段的电价 + 服务费（元/kWh）。 */
     private BigDecimal lookupRate(PileType pileType) {
-        LocalTime now = timeProvider.now().toLocalTime();
+        int nowMin = timeProvider.now().getHour() * 60 + timeProvider.now().getMinute();
         List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
                 new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
         );
         for (var p : periods) {
-            LocalTime start = LocalTime.parse(p.getStartTime());
-            LocalTime end = LocalTime.parse(p.getEndTime());
-            if (start.compareTo(end) <= 0) {
-                if (!now.isBefore(start) && now.isBefore(end)) {
+            int start = parseMinutes(p.getStartTime());
+            int end = parseMinutes(p.getEndTime());
+            if (start <= end) {
+                if (nowMin >= start && nowMin < end) {
                     return p.getElectricityPrice().add(p.getServicePrice());
                 }
             } else {
-                // 跨天时段（如 22:00 - 06:00）
-                if (!now.isBefore(start) || now.isBefore(end)) {
+                if (nowMin >= start || nowMin < end) {
                     return p.getElectricityPrice().add(p.getServicePrice());
                 }
             }
         }
-        // 兜底费率
         return new BigDecimal("1.0");
     }
 

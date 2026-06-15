@@ -6,9 +6,12 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
+import bupt.evchargebackend.entity.charging.enums.OrderStatus;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
+import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
+import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.entity.user.Car;
@@ -280,11 +283,116 @@ class ChargingServiceImplTest {
         assertEquals(Integer.valueOf(60), inserted.getEstimatedMinutes());
     }
 
+    // ========== 开始充电 ==========
+
+    @Test
+    void startShouldReturn400_whenCarIdIsEmpty() {
+        ChargingStartRequest req = new ChargingStartRequest();
+        req.setChargePileNum("F1");
+        assertEquals(400, service.start(req).getCode());
+    }
+
+    @Test
+    void startShouldReturn404_whenCarNotFound() {
+        ChargingStartRequest req = new ChargingStartRequest();
+        req.setCarId(CAR_ID);
+        req.setChargePileNum("F1");
+        doReturn(null).when(carMapper).selectById(CAR_ID);
+        assertEquals(404, service.start(req).getCode());
+    }
+
+    @Test
+    void startShouldReturn400_whenNoCalledOrder() {
+        ChargingStartRequest req = new ChargingStartRequest();
+        req.setCarId(CAR_ID);
+        req.setChargePileNum("F1");
+        doReturn(null).when(chargingOrderMapper).selectOne(any());
+        assertEquals(400, service.start(req).getCode());
+    }
+
+    @Test
+    void startShouldReturn404_whenPileNotFound() {
+        ChargingStartRequest req = new ChargingStartRequest();
+        req.setCarId(CAR_ID);
+        req.setChargePileNum("F1");
+        doReturn(createCalledOrder()).when(chargingOrderMapper).selectOne(any());
+        doReturn(null).when(chargingPileMapper).selectById("F1");
+        assertEquals(404, service.start(req).getCode());
+    }
+
+    @Test
+    void startShouldReturn400_whenPowerOff() {
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.OFF);
+
+        ChargingStartRequest req = new ChargingStartRequest();
+        req.setCarId(CAR_ID);
+        req.setChargePileNum("F1");
+        doReturn(createCalledOrder()).when(chargingOrderMapper).selectOne(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        assertEquals(400, service.start(req).getCode());
+    }
+
+    @Test
+    void startShouldReturn400_whenPileNotAvailable() {
+        ChargingPile pile = createFastPile("F1");
+        pile.setWorkingState(WorkingState.FAULT);
+
+        ChargingStartRequest req = new ChargingStartRequest();
+        req.setCarId(CAR_ID);
+        req.setChargePileNum("F1");
+        doReturn(createCalledOrder()).when(chargingOrderMapper).selectOne(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        assertEquals(400, service.start(req).getCode());
+    }
+
+    @Test
+    void startShouldReturn400_whenNotQueueHead() {
+        ChargingOrder order = createCalledOrder();
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        ChargingStartRequest req = new ChargingStartRequest();
+        req.setCarId(CAR_ID);
+        req.setChargePileNum("F1");
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(null).when(engine).peekPileQueue("F1");
+        assertEquals(400, service.start(req).getCode());
+    }
+
+    @Test
+    void startShouldSucceed() {
+        ChargingOrder order = createCalledOrder();
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        ChargingStartRequest req = new ChargingStartRequest();
+        req.setCarId(CAR_ID);
+        req.setChargePileNum("F1");
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(order).when(engine).peekPileQueue("F1");
+
+        var result = service.start(req);
+        assertEquals(200, result.getCode());
+        assertEquals(Integer.valueOf(1), result.getData().getResult());
+    }
+
     // ========== Helper ==========
 
     @SafeVarargs
     private static <T> List<T> mutableList(T... items) {
         return new ArrayList<>(List.of(items));
+    }
+
+    private static ChargingOrder createCalledOrder() {
+        ChargingOrder o = new ChargingOrder();
+        o.setOrderId("order-1");
+        o.setCarId(CAR_ID);
+        o.setOrderStatus(OrderStatus.CALLED);
+        o.setTargetKwh(AMOUNT);
+        return o;
     }
 
     private static ChargingPile createFastPile(String id) {

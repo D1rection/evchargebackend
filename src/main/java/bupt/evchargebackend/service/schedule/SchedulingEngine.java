@@ -13,12 +13,16 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 调度引擎：
- * <ul>
- *   <li>桩前队列 — 每个充电桩一条 Deque，上限 M（默认 3），position 0 = 充电中</li>
- *   <li>等候区 — 快／慢各一条，当所有桩队列满时进入</li>
- *   <li>故障队列 — 快／慢各一条，由 Service 层分发到最短队列的桩</li>
- * </ul>
+ * 调度引擎：管理等候区、故障队列、桩前队列。
+ *
+ * 等候区（快/慢）— 全满时进入，故障期间冻结
+ * 故障队列（快/慢）— 故障车暂存，恢复后分发
+ * 桩前队列（每桩一条）— position 0 充电中，M 上限（默认 3）
+ *
+ * onPileReleased — 充电完成 → 排队下一辆顶上 → 等候区填补
+ * onPileFaulted — 桩故障 → 排队车移入故障队列（保留充电中车辆）
+ *
+ * 故障车由 Service 层 redistributeFaults() 分发
  *
  * @author Deng Chao
  * @since 2026-06-14

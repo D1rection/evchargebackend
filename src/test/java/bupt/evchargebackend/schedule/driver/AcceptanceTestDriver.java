@@ -1,4 +1,4 @@
-package bupt.evchargebackend.driver;
+package bupt.evchargebackend.schedule.driver;
 
 import bupt.evchargebackend.entity.charging.ChargingSession;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
@@ -6,12 +6,12 @@ import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
+import bupt.evchargebackend.schedule.stub.BillingHelper;
+import bupt.evchargebackend.schedule.stub.ChargingService;
+import bupt.evchargebackend.schedule.stub.SimulatedTimeProvider;
+import bupt.evchargebackend.schedule.stub.Stub;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
 import bupt.evchargebackend.service.schedule.impl.FifoStrategy;
-import bupt.evchargebackend.stub.BillingHelper;
-import bupt.evchargebackend.stub.ChargingService;
-import bupt.evchargebackend.stub.SimulatedTimeProvider;
-import bupt.evchargebackend.stub.Stub;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -21,21 +21,16 @@ import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.*;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.fail;
 
-/**
- * 验收测试 Driver：读取文本用例 → 步进模拟时间 → 验证状态。
- *
- * @author Deng Chao
- * @since 2026-06-14
- */
 class AcceptanceTestDriver {
 
-    private static final Path CASE_FILE = Path.of("src/test/resources/test-case.txt");
-    private static final Path EXPECTED_FILE = Path.of("src/test/resources/test-expected.txt");
+    private static final Path CASE_FILE = Path.of("src/test/resources/schedule/test-case.txt");
+    private static final Path EXPECTED_FILE = Path.of("src/test/resources/schedule/test-expected.txt");
     private static final int TIME_STEP = 5;
     private static final int SIMULATION_START_HOUR = 6;
 
@@ -44,7 +39,6 @@ class AcceptanceTestDriver {
     private ChargingService service;
     private SimulatedTimeProvider time;
 
-    /** 初始化 Stub、引擎、服务，创建 5 个充电桩。 */
     @BeforeEach
     void setUp() {
         time = new SimulatedTimeProvider(LocalDateTime.of(2026, 6, 14, SIMULATION_START_HOUR, 0));
@@ -61,7 +55,6 @@ class AcceptanceTestDriver {
         run(caseLines, expectedLines);
     }
 
-    /** 主循环：按时间步推进 → 处理事件 → 验证状态。 */
     void run(List<String> caseLines, List<String> expectedLines) {
         var events = parseEvents(caseLines);
         var checkpoints = parseExpectedStates(expectedLines);
@@ -92,7 +85,6 @@ class AcceptanceTestDriver {
         }
     }
 
-    /** 推进充电进度：所有正在充电的车辆增加电量，达到目标时自动结束。 */
     private void advanceCharging(int minutes) {
         List<ChargingSession> finished = new ArrayList<>();
         for (var session : stub.sessions.values()) {
@@ -110,13 +102,16 @@ class AcceptanceTestDriver {
                 finished.add(session);
             }
             session.setChargedKwh(charged);
+            // 累加费用
+            LocalTime rateTime = time.now().toLocalTime();
+            BigDecimal fee = increment.multiply(BillingHelper.rateAt(rateTime));
+            stub.addSessionFee(session.getSessionId(), fee);
         }
         for (var session : finished) {
             service.finish(session.getCarId());
         }
     }
 
-    /** 解析事件字符串并调用对应的 Service 方法。 */
     private void processEvent(Event event) {
         switch (event.type) {
             case "ARRIVE" -> {
@@ -130,7 +125,6 @@ class AcceptanceTestDriver {
         }
     }
 
-    /** 验证当前状态与期望状态是否一致。 */
     private void verify(Checkpoint cp) {
         String[] pileNames = {"FAST1", "FAST2", "SLOW1", "SLOW2", "SLOW3"};
         String[] pileIds = {"F1", "F2", "T1", "T2", "T3"};
@@ -148,7 +142,9 @@ class AcceptanceTestDriver {
                         : stub.findSessionByPile(pileIds[i]);
                 String actualCar = session != null ? session.getCarId() : "-";
                 assertEquals(expected.car, actualCar, pileNames[i] + " car mismatch at " + cp.time);
-                String actualKwh = session != null ? String.format("%.2f", session.getChargedKwh()) : "-";
+
+                String actualKwh = session != null
+                        ? String.format("%.2f", session.getChargedKwh()) : "-";
                 if (!expected.kwh.equals(actualKwh)) {
                     try {
                         double diff = Math.abs(Double.parseDouble(expected.kwh)
@@ -162,19 +158,31 @@ class AcceptanceTestDriver {
                                 pileNames[i] + " kwh mismatch at " + cp.time);
                     }
                 }
+
+                // 校验费用（放宽容差，因费用值较大）
+                String actualFee = session != null
+                        ? String.format("%.2f", stub.getSessionFee(session.getSessionId())) : "-";
+                if (!expected.fee.equals(actualFee)) {
+                    try {
+                        double diff = Math.abs(Double.parseDouble(expected.fee)
+                                - Double.parseDouble(actualFee));
+                        if (diff > 1.0) {
+                            assertEquals(expected.fee, actualFee,
+                                    pileNames[i] + " fee mismatch at " + cp.time);
+                        }
+                    } catch (NumberFormatException e) {
+                        assertEquals(expected.fee, actualFee,
+                                pileNames[i] + " fee mismatch at " + cp.time);
+                    }
+                }
             }
         }
     }
-
-    // ---- record types ----
 
     static record Event(String time, String type, String subject, String mode, double value) {}
     static record PileExpected(String car, String kwh, String fee) {}
     static record Checkpoint(String time, Map<String, PileExpected> pileStates, List<String> waitingArea) {}
 
-    // ---- parsing ----
-
-    /** 解析事件文本文件。 */
     private List<Event> parseEvents(List<String> lines) {
         List<Event> events = new ArrayList<>();
         for (String line : lines) {
@@ -203,7 +211,6 @@ class AcceptanceTestDriver {
         return events;
     }
 
-    /** 解析期望状态文本文件。 */
     private List<Checkpoint> parseExpectedStates(List<String> lines) {
         List<Checkpoint> checkpoints = new ArrayList<>();
         String currentTime = null;
@@ -234,7 +241,6 @@ class AcceptanceTestDriver {
                     waiting = new ArrayList<>(Arrays.asList(data.split("\\s+")));
                 }
             } else if (line.startsWith("QUEUE")) {
-                // queue state not verified in this version
             } else {
                 if (currentTime != null) {
                     checkpoints.add(new Checkpoint(currentTime,
@@ -252,13 +258,11 @@ class AcceptanceTestDriver {
         return checkpoints;
     }
 
-    /** 时间字符串 → 分钟数。 */
     private static int toMinutes(String time) {
         String[] parts = time.split(":");
         return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
     }
 
-    /** 打印当前系统状态（验证失败时调用）。 */
     private void dumpState() {
         String[] names = {"FAST1", "FAST2", "SLOW1", "SLOW2", "SLOW3"};
         String[] ids = {"F1", "F2", "T1", "T2", "T3"};
@@ -268,12 +272,12 @@ class AcceptanceTestDriver {
             var s = stub.findSessionByPile(ids[i]);
             String car = s != null ? s.getCarId() : "-";
             String kwh = s != null ? String.format("%.2f", s.getChargedKwh()) : "-";
+            String fee = s != null ? String.format("%.2f", stub.getSessionFee(s.getSessionId())) : "-";
             String state = p != null ? p.getWorkingState().name() : "?";
-            System.out.println("  " + names[i] + ": " + state + " car=" + car + " kwh=" + kwh);
+            System.out.println("  " + names[i] + ": " + state + " car=" + car + " kwh=" + kwh + " fee=" + fee);
         }
     }
 
-    /** 初始化 5 个充电桩（2 快充 + 3 慢充）。 */
     private void initPiles() {
         stub.initPile(makePile("F1", "快充1", PileType.FAST, 30));
         stub.initPile(makePile("F2", "快充2", PileType.FAST, 30));
@@ -282,7 +286,6 @@ class AcceptanceTestDriver {
         stub.initPile(makePile("T3", "慢充3", PileType.SLOW, 10));
     }
 
-    /** 创建充电桩实例。 */
     private ChargingPile makePile(String id, String no, PileType type, int power) {
         ChargingPile p = new ChargingPile();
         p.setPileId(id);

@@ -1,4 +1,4 @@
-package bupt.evchargebackend.stub;
+package bupt.evchargebackend.schedule.stub;
 
 import bupt.evchargebackend.common.time.TimeProvider;
 import bupt.evchargebackend.entity.bill.Bill;

@@ -28,7 +28,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -505,6 +507,126 @@ class ChargingServiceImplTest {
         assertEquals("2026-06-15 14:30:00", result.getData().getRequestTime());
     }
 
+    // ========== 查看充电状态 ==========
+
+    @Test
+    void stateShouldReturn400_whenCarIdIsEmpty() {
+        assertEquals(400, service.chargingState("").getCode());
+    }
+
+    @Test
+    void stateShouldReturnNone_whenNoSession() {
+        doReturn(null).when(chargingSessionMapper).selectOne(any());
+        var result = service.chargingState(CAR_ID);
+        assertEquals(200, result.getCode());
+        assertEquals("none", result.getData().getStatus());
+    }
+
+    @Test
+    void stateShouldReturnCharging() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime now = start.plusHours(1);
+
+        ChargingSession session = createSession(start, 40, SessionStatus.CHARGING);
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(now).when(timeProvider).now();
+        doReturn(mutableList(period("00:00", "24:00", "1.5", "5.0"))).when(billingRatePeriodMapper).selectList(any());
+
+        var result = service.chargingState(CAR_ID);
+        assertEquals(200, result.getCode());
+        assertEquals("charging", result.getData().getStatus());
+        assertEquals("30.00", result.getData().getCurrentAmount().toString());
+        assertEquals("45.00", result.getData().getCurrentChargeFee().toString());
+        assertEquals("150.00", result.getData().getCurrentServiceFee().toString());
+        assertEquals("195.00", result.getData().getTotalCurrentFee().toString());
+        assertEquals("01:00:00", result.getData().getCurrentDuration());
+        assertEquals("1.5", result.getData().getCurrentPeriodPrice().toString());
+    }
+
+    @Test
+    void stateShouldReturnCharging_whenCrossPeriods() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime now = LocalDateTime.of(2026, 6, 16, 16, 0);
+
+        ChargingSession session = createSession(start, 60, SessionStatus.CHARGING);
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(now).when(timeProvider).now();
+        doReturn(mutableList(
+                period("08:00", "15:00", "1.5", "5.0"),
+                period("15:00", "22:00", "1.0", "5.0")
+        )).when(billingRatePeriodMapper).selectList(any());
+
+        var result = service.chargingState(CAR_ID);
+        // 14:00-15:00: 30kWh × (1.5+5.0) = 195
+        // 15:00-16:00: 30kWh × (1.0+5.0) = 180
+        // total: 60kWh, chargeFee=45+30=75, serviceFee=150+150=300
+        assertEquals("60.00", result.getData().getCurrentAmount().toString());
+        assertEquals("75.00", result.getData().getCurrentChargeFee().toString());
+        assertEquals("300.00", result.getData().getCurrentServiceFee().toString());
+        assertEquals("375.00", result.getData().getTotalCurrentFee().toString());
+        assertEquals("1.0", result.getData().getCurrentPeriodPrice().toString());
+    }
+
+    @Test
+    void stateShouldCapAmount_whenExceedsTarget() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime now = start.plusHours(3);
+
+        ChargingSession session = createSession(start, 40, SessionStatus.CHARGING);
+        ChargingPile pile = createFastPile("F1");
+        pile.setPowerState(PowerState.ON);
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+        doReturn(pile).when(chargingPileMapper).selectById("F1");
+        doReturn(now).when(timeProvider).now();
+        doReturn(mutableList(period("00:00", "24:00", "1.5", "5.0"))).when(billingRatePeriodMapper).selectList(any());
+
+        var result = service.chargingState(CAR_ID);
+        assertEquals("40.00", result.getData().getCurrentAmount().toString()); // cap at target
+    }
+
+    @Test
+    void stateShouldReturnCompleted_whenFinished() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime end = start.plusHours(2);
+
+        ChargingSession session = createSession(start, 40, SessionStatus.FINISHED);
+        session.setEndTime(end);
+        session.setChargedKwh(new BigDecimal("40.00"));
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+
+        var result = service.chargingState(CAR_ID);
+        assertEquals("completed", result.getData().getStatus());
+        assertEquals("40.00", result.getData().getCurrentAmount().toString());
+        assertEquals("02:00:00", result.getData().getCurrentDuration());
+    }
+
+    @Test
+    void stateShouldReturnInterrupted_whenInterrupted() {
+        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
+        LocalDateTime end = start.plusMinutes(30);
+
+        ChargingSession session = createSession(start, 40, SessionStatus.INTERRUPTED);
+        session.setEndTime(end);
+        session.setChargedKwh(new BigDecimal("15.00"));
+
+        doReturn(session).when(chargingSessionMapper).selectOne(any());
+
+        var result = service.chargingState(CAR_ID);
+        assertEquals("interrupted", result.getData().getStatus());
+        assertEquals("15.00", result.getData().getCurrentAmount().toString());
+        assertEquals("00:30:00", result.getData().getCurrentDuration());
+    }
+
     // ========== Helper ==========
 
     @SafeVarargs
@@ -540,6 +662,28 @@ class ChargingServiceImplTest {
         p.setPileType(PileType.SLOW);
         p.setPowerKw(10);
         p.setWorkingState(WorkingState.AVAILABLE);
+        return p;
+    }
+
+    private static ChargingSession createSession(LocalDateTime start, int targetKwh, SessionStatus status) {
+        ChargingSession s = new ChargingSession();
+        s.setSessionId("session-1");
+        s.setOrderId("order-1");
+        s.setPileId("F1");
+        s.setCarId(CAR_ID);
+        s.setStartTime(start);
+        s.setTargetKwh(BigDecimal.valueOf(targetKwh));
+        s.setChargedKwh(BigDecimal.ZERO);
+        s.setSessionStatus(status);
+        return s;
+    }
+
+    private static BillingRatePeriod period(String start, String end, String elec, String svc) {
+        BillingRatePeriod p = new BillingRatePeriod();
+        p.setStartTime(start);
+        p.setEndTime(end);
+        p.setElectricityPrice(new BigDecimal(elec));
+        p.setServicePrice(new BigDecimal(svc));
         return p;
     }
 

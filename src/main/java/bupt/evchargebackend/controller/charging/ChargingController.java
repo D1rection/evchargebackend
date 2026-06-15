@@ -2,9 +2,12 @@ package bupt.evchargebackend.controller.charging;
 
 import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.response.Result;
+import bupt.evchargebackend.dto.charging.ChargingRequest;
+import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.service.charging.ChargingService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -21,6 +24,14 @@ public class ChargingController {
 
     public ChargingController(ChargingService chargingService) {
         this.chargingService = chargingService;
+    }
+
+    /**
+     * 提交充电申请：车辆进入等候区后用户发起充电请求。
+     */
+    @PostMapping("/request")
+    public Result<ChargingResponse> submit(@Valid @RequestBody ChargingRequest request) {
+        return chargingService.submit(request);
     }
 
     @PostMapping("/modify-amount")

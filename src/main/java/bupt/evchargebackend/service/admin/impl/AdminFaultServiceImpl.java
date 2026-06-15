@@ -30,7 +30,9 @@ public class AdminFaultServiceImpl implements AdminFaultService {
         }
 
         String countSql = "SELECT COUNT(*) FROM fault_record" + whereSql;
-        Long total = jdbcTemplate.queryForObject(countSql, Long.class, params.toArray());
+        Long total = jdbcTemplate.query(countSql,
+                rs -> rs.next() ? rs.getLong(1) : 0L,
+                params.toArray());
 
         int offset = (pageNum - 1) * pageSize;
         String pageSql = "SELECT fault_id, pile_id, fault_code, fault_time, fault_status, " +

@@ -183,6 +183,40 @@ public class DatabaseInitializer implements CommandLineRunner {
                 }
             }
 
+            // ========== Schema 演进：补全已存在表中缺失的列 ==========
+            log.info("开始检查并补全缺失的列...");
+            String[][] migrations = {
+                { "fault_record", "fault_code", "INT COMMENT '故障码: 101过流/102过温/103通信中断/404离线'" },
+                { "fault_record", "resolve_code", "INT COMMENT '处置码: 200复位/201换硬件/202换通信/203重启/204其他'" },
+                { "fault_record", "resolver", "VARCHAR(50) COMMENT '处置人'" },
+                { "fault_record", "remark", "TEXT COMMENT '处置备注'" },
+                { "fault_record", "description", "TEXT COMMENT '故障描述'" },
+                { "fault_record", "created_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP" },
+                { "fault_record", "updated_at", "DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP" },
+            };
+            for (String[] m : migrations) {
+                try {
+                    String checkSql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS " +
+                            "WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?";
+                    Integer count;
+                    try (var ps = conn.prepareStatement(checkSql)) {
+                        ps.setString(1, m[0]);
+                        ps.setString(2, m[1]);
+                        try (var rs = ps.executeQuery()) {
+                            count = rs.next() ? rs.getInt(1) : 0;
+                        }
+                    }
+                    if (count != null && count == 0) {
+                        stmt.execute("ALTER TABLE " + m[0] + " ADD COLUMN " + m[1] + " " + m[2]);
+                        log.info("列 {}.{} 已添加", m[0], m[1]);
+                    } else {
+                        log.info("列 {}.{} 已存在，跳过", m[0], m[1]);
+                    }
+                } catch (Exception e) {
+                    log.error("添加列 {}.{} 失败: {}", m[0], m[1], e.getMessage());
+                }
+            }
+
             log.info("数据库表检查完成");
         }
     }

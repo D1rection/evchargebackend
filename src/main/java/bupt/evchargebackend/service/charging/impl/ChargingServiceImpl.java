@@ -93,18 +93,37 @@ public class ChargingServiceImpl implements ChargingService {
             return Result.error(400, "充电模式必须为 FAST 或 SLOW");
         }
 
-        // 4. 创建订单
+        // 4. 校验车辆无进行中的订单
+        Long activeCount = chargingOrderMapper.selectCount(
+                new QueryWrapper<ChargingOrder>()
+                        .eq("car_id", carId)
+                        .in("order_status", List.of("WAITING", "CALLED", "CHARGING"))
+        );
+        if (activeCount != null && activeCount > 0) {
+            return Result.error(400, "该车辆已有进行中的订单");
+        }
+
+        // 5. 计算预估费用和用时
+        PileType pileType = mode == RequestMode.FAST ? PileType.FAST : PileType.SLOW;
+        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
+        BigDecimal rate = lookupRate(pileType);
+        BigDecimal estimatedFee = amount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
+        int estimatedMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(60)).intValue();
+
+        // 6. 创建订单（持久化预估费用和用时）
         ChargingOrder order = new ChargingOrder();
         order.setOrderId(UUID.randomUUID().toString());
         order.setOrderNo("ORD-" + System.currentTimeMillis());
         order.setCarId(carId);
         order.setRequestMode(mode);
         order.setTargetKwh(amount);
+        order.setEstimatedFee(estimatedFee);
+        order.setEstimatedMinutes(estimatedMinutes);
         order.setOrderStatus(OrderStatus.WAITING);
         chargingOrderMapper.insert(order);
 
-        // 5. 调度：有故障时订单进入等候区（故障队列优先分发），否则选最优桩
-        PileType pileType = mode == RequestMode.FAST ? PileType.FAST : PileType.SLOW;
+        // 7. 调度：有故障时订单进入等候区（故障队列优先分发），否则选最优桩
         String selectedPileId = null;
         if (engine.hasAnyFault()) {
             engine.enqueueWait(order);
@@ -128,7 +147,7 @@ public class ChargingServiceImpl implements ChargingService {
             }
         }
 
-        // 6. 组装响应
+        // 8. 组装响应
         OrderStatus status = order.getOrderStatus();
         String carPosition = status == OrderStatus.CHARGING ? "充电区" : "等候区";
         String carState = status.name().toLowerCase();
@@ -139,12 +158,6 @@ public class ChargingServiceImpl implements ChargingService {
             queueNum = engine.waitQueueSize(pileType);
         }
         String requestTime = timeProvider.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
-
-        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
-        BigDecimal rate = lookupRate(pileType);
-        BigDecimal estimatedFee = amount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
-        int estimatedMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(60)).intValue();
 
         ChargingResponse resp = new ChargingResponse();
         resp.setCarPosition(carPosition);

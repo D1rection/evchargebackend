@@ -18,6 +18,8 @@ import java.util.*;
 
 /**
  * 管理员场站设备服务实现。
+ * <p>
+ * 使用 MyBatis Plus 管理场站全局配置和充电桩台账的 CRUD 操作。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -34,11 +36,17 @@ public class AdminStationServiceImpl implements AdminStationService {
         this.chargingPileMapper = chargingPileMapper;
     }
 
+    /**
+     * 获取场站全局参数。
+     * <p>
+     * 若数据库中无配置记录，返回默认值。
+     *
+     * @return {@code {fastCount, slowCount, waitingSpotsPerPile}}
+     */
     @Override
     public Map<String, Object> getStationConfig() {
         List<StationConfig> configs = stationConfigMapper.selectList(null);
         if (configs.isEmpty()) {
-            // 如果没有配置，返回默认值
             return Map.of("fastCount", 0, "slowCount", 0, "waitingSpotsPerPile", 2);
         }
         StationConfig config = configs.get(0);
@@ -47,6 +55,13 @@ public class AdminStationServiceImpl implements AdminStationService {
                       "waitingSpotsPerPile", config.getWaitingSpotsPerPile());
     }
 
+    /**
+     * 更新场站全局参数。
+     * <p>
+     * 采用 upsert 策略：若配置不存在则插入，否则更新。
+     *
+     * @param request 配置请求，包含快充/慢充桩数量和每桩等候车位数
+     */
     @Override
     public void updateStationConfig(StationConfigRequest request) {
         List<StationConfig> configs = stationConfigMapper.selectList(null);
@@ -66,6 +81,11 @@ public class AdminStationServiceImpl implements AdminStationService {
         }
     }
 
+    /**
+     * 获取充电桩台账列表。
+     *
+     * @return 充电桩列表，每项含 {@code id}、{@code pileId}、{@code pileNo}、{@code pileType}、{@code powerKw}
+     */
     @Override
     public List<Map<String, Object>> listDevices() {
         List<ChargingPile> piles = chargingPileMapper.selectList(null);
@@ -81,15 +101,23 @@ public class AdminStationServiceImpl implements AdminStationService {
         return result;
     }
 
+    /**
+     * 新增充电桩。
+     * <p>
+     * 自动生成桩 ID（FP=快充 / SP=慢充 + 3 位随机大写字母），
+     * 初始状态为停机（OFF/STOPPED），累计量归零。
+     *
+     * @param request 充电桩信息，包含 {@code pileNo}、{@code pileType}、{@code powerKw}
+     * @return {@code {pileId}} 新创建的充电桩 ID
+     * @throws BusinessException 桩 ID 冲突时抛出（409）
+     */
     @Override
     public Map<String, Object> addDevice(PileRequest request) {
-        // 生成 pileId 后缀生成规则为随机字母大写(也行吧)
         String type = request.getPileType().toUpperCase();
         String prefix = type.equals("FAST") ? "FP" : "SP";
         String suffix = UUID.randomUUID().toString().substring(0, 3).toUpperCase();
         String pileId = prefix + suffix;
 
-        // 检查唯一性
         LambdaQueryWrapper<ChargingPile> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ChargingPile::getPileId, pileId);
         if (chargingPileMapper.selectCount(wrapper) > 0) {
@@ -111,6 +139,13 @@ public class AdminStationServiceImpl implements AdminStationService {
         return Map.of("pileId", pileId);
     }
 
+    /**
+     * 编辑充电桩信息，支持部分更新。
+     *
+     * @param pileId  充电桩 ID
+     * @param request 更新的字段（{@code pileNo}、{@code pileType}、{@code powerKw} 可部分传入）
+     * @throws BusinessException 充电桩不存在时抛出（404）
+     */
     @Override
     public void updateDevice(String pileId, PileRequest request) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);
@@ -129,6 +164,12 @@ public class AdminStationServiceImpl implements AdminStationService {
         chargingPileMapper.updateById(pile);
     }
 
+    /**
+     * 删除充电桩。
+     *
+     * @param pileId 充电桩 ID
+     * @throws BusinessException 充电桩不存在时抛出（404）
+     */
     @Override
     public void deleteDevice(String pileId) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);

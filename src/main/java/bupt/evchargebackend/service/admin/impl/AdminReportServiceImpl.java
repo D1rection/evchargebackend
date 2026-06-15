@@ -16,6 +16,9 @@ import java.util.*;
 
 /**
  * 管理员运营报表服务实现。
+ * <p>
+ * 使用 {@link JdbcTemplate} 从账单、充电会话、故障表中聚合运营数据，
+ * 支持按日/周/月/自定义时间范围统计。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -29,15 +32,27 @@ public class AdminReportServiceImpl implements AdminReportService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * 生成运营统计数据。
+     * <p>
+     * 从 {@code bill} 表聚合收入与充电量，从 {@code charging_session} 统计充电次数，
+     * 从 {@code fault_record} 计算故障率。
+     *
+     * @param targetType 统计目标类型（{@code all}=全部桩，{@code single}=单桩）
+     * @param pileId     单桩统计时必填
+     * @param timeRange  时间范围类型（{@code day/week/month/custom}）
+     * @param startDate  自定义起始日期（{@code yyyy-MM-dd}）
+     * @param endDate    自定义结束日期（{@code yyyy-MM-dd}）
+     * @return 运营统计 Map，含 totalChargeCount、totalChargeAmount、totalRevenue、
+     *         totalChargeFee、totalServiceFee、avgChargeDuration、faultRate
+     */
     @Override
     public Map<String, Object> generateReport(String targetType, String pileId,
                                               String timeRange, String startDate, String endDate) {
-        // 计算时间范围
         Map<String, LocalDateTime> range = calculateTimeRange(timeRange, startDate, endDate);
         LocalDateTime start = range.get("start");
         LocalDateTime end = range.get("end");
 
-        // 构建桩筛选条件
         String pileCondition = "";
         List<Object> params = new ArrayList<>();
         params.add(start);
@@ -51,7 +66,6 @@ public class AdminReportServiceImpl implements AdminReportService {
             params.add(pileId);
         }
 
-        // 总充电次数
         String countSql = "SELECT COUNT(*) FROM charging_session cs " +
                 "WHERE cs.start_time >= ? AND cs.start_time <= ?" +
                 (params.size() > 2 ? " AND cs.pile_id = ?" : "");
@@ -60,7 +74,6 @@ public class AdminReportServiceImpl implements AdminReportService {
                 : new Object[]{start, end};
         Long totalChargeCount = jdbcTemplate.queryForObject(countSql, Long.class, countParams);
 
-        // 从 bill 表聚合收入数据
         String billSql = """
                 SELECT
                     COALESCE(SUM(b.charged_kwh), 0) AS totalChargeAmount,
@@ -74,7 +87,6 @@ public class AdminReportServiceImpl implements AdminReportService {
         Object[] billParams = params.toArray();
         Map<String, Object> billData = jdbcTemplate.queryForMap(billSql, billParams);
 
-        // 故障率 — 构建子查询
         String pileSubQuery = "SELECT COUNT(*) FROM charging_pile";
         if ("single".equals(targetType) && pileId != null) {
             pileSubQuery += " WHERE pile_id = '" + pileId + "'";
@@ -100,12 +112,21 @@ public class AdminReportServiceImpl implements AdminReportService {
         return result;
     }
 
+    /**
+     * 导出报表为 CSV 文件。
+     *
+     * @param targetType 统计目标类型
+     * @param pileId     单桩统计时必填
+     * @param timeRange  时间范围类型
+     * @param startDate  自定义起始日期
+     * @param endDate    自定义结束日期
+     * @return CSV 文件字节数组（UTF-8 编码，BOM 头）
+     */
     @Override
     public byte[] exportReport(String targetType, String pileId,
                                String timeRange, String startDate, String endDate) {
         Map<String, Object> data = generateReport(targetType, pileId, timeRange, startDate, endDate);
 
-        // 生成 CSV 格式
         StringBuilder csv = new StringBuilder();
         csv.append("指标,值\n");
         for (Map.Entry<String, Object> entry : data.entrySet()) {
@@ -114,6 +135,15 @@ public class AdminReportServiceImpl implements AdminReportService {
         return csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
+    /**
+     * 根据时间范围类型计算查询的起止时间。
+     *
+     * @param timeRange 时间范围类型（{@code day/week/month/custom}）
+     * @param startDate 自定义起始日期
+     * @param endDate   自定义结束日期
+     * @return {@code {start: LocalDateTime, end: LocalDateTime}}
+     * @throws BusinessException 自定义模式缺参数或参数无效时抛出（400）
+     */
     private Map<String, LocalDateTime> calculateTimeRange(String timeRange, String startDate, String endDate) {
         LocalDate today = LocalDate.now();
         LocalDateTime start;
@@ -147,6 +177,9 @@ public class AdminReportServiceImpl implements AdminReportService {
         return result;
     }
 
+    /**
+     * 将数据库查询值安全转换为 {@code double}，{@code null} 时返回 0.0。
+     */
     private double toDouble(Object val) {
         if (val == null) return 0.0;
         if (val instanceof BigDecimal bd) return bd.doubleValue();
@@ -154,6 +187,9 @@ public class AdminReportServiceImpl implements AdminReportService {
         return 0.0;
     }
 
+    /**
+     * 将数据库查询值安全转换为 {@code int}，{@code null} 时返回 0。
+     */
     private int toInt(Object val) {
         if (val == null) return 0;
         if (val instanceof BigDecimal bd) return bd.intValue();

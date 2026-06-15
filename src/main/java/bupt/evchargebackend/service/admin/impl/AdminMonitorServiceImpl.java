@@ -11,6 +11,8 @@ import java.util.*;
 
 /**
  * 管理员监控统计服务实现。
+ * <p>
+ * 使用 {@link JdbcTemplate} 直接查询数据库，聚合充电桩状态和运营概览数据。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -24,6 +26,16 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * 获取充电桩状态列表，支持分页。
+     * <p>
+     * 通过 LEFT JOIN 关联当前充电会话和车辆信息，实时展示每台桩的运行状态。
+     * 不传分页参数时返回全部数据。
+     *
+     * @param pageNum  页码，{@code null} 表示不分页
+     * @param pageSize 每页条数，{@code null} 表示不分页
+     * @return 分页包装的充电桩状态列表，含 pileId、pileType、powerState、workingState、currentCarNo 等
+     */
     @Override
     public PageResult<Map<String, Object>> listPileStatus(Integer pageNum, Integer pageSize) {
         String baseSql = """
@@ -47,13 +59,11 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
                 ORDER BY cp.pile_id
                 """;
 
-        // 如果不传分页参数，返回全部
         if (pageNum == null || pageSize == null) {
             List<Map<String, Object>> all = jdbcTemplate.queryForList(baseSql);
             return PageResult.of(all, all.size(), 1, all.size());
         }
 
-        // 分页查询
         int offset = (pageNum - 1) * pageSize;
         String countSql = "SELECT COUNT(*) FROM charging_pile";
         Long total = jdbcTemplate.queryForObject(countSql, Long.class);
@@ -61,7 +71,6 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         String pageSql = baseSql + " LIMIT " + pageSize + " OFFSET " + offset;
         List<Map<String, Object>> list = jdbcTemplate.queryForList(pageSql);
 
-        // 转换 BigDecimal 为适当的类型
         for (Map<String, Object> row : list) {
             convertDecimal(row, "totalCapacity");
         }
@@ -69,24 +78,27 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         return PageResult.of(list, total != null ? total : 0, pageNum, pageSize);
     }
 
+    /**
+     * 获取仪表盘概览数据。
+     * <p>
+     * 聚合今日充电次数、今日收入、设备在线率和当前故障数四项核心指标。
+     *
+     * @return 仪表盘数据，含 {@code todayChargeCount}、{@code todayRevenue}、{@code onlineRate}、{@code faultCount}
+     */
     @Override
     public Map<String, Object> getDashboard() {
-        // 今日充电次数
         String countSql = "SELECT COUNT(*) FROM charging_session WHERE DATE(start_time) = CURDATE()";
         Long todayChargeCount = jdbcTemplate.queryForObject(countSql, Long.class);
 
-        // 今日收入
         String revenueSql = "SELECT COALESCE(SUM(total_fee), 0) FROM bill WHERE DATE(created_at) = CURDATE()";
         BigDecimal todayRevenue = jdbcTemplate.queryForObject(revenueSql, BigDecimal.class);
 
-        // 设备在线率
         String onlineSql = """
                 SELECT ROUND(
                     COALESCE(SUM(CASE WHEN power_state = 'ON' THEN 1 ELSE 0 END) * 100.0 / NULLIF(COUNT(*), 0), 0)
                 , 1) FROM charging_pile""";
         BigDecimal onlineRate = jdbcTemplate.queryForObject(onlineSql, BigDecimal.class);
 
-        // 当前故障数
         String faultSql = "SELECT COUNT(*) FROM fault_record WHERE fault_status = 'ACTIVE'";
         Long faultCount = jdbcTemplate.queryForObject(faultSql, Long.class);
 
@@ -98,6 +110,12 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         return result;
     }
 
+    /**
+     * 将行数据中的 {@link BigDecimal} 值转换为 {@link Double}，方便 Jackson 序列化。
+     *
+     * @param row 行数据 Map
+     * @param key 需要转换的字段名
+     */
     private void convertDecimal(Map<String, Object> row, String key) {
         Object val = row.get(key);
         if (val instanceof BigDecimal bd) {

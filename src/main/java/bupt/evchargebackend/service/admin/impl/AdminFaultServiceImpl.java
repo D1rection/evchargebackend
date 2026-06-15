@@ -11,6 +11,8 @@ import java.util.*;
 
 /**
  * 管理员故障运维服务实现。
+ * <p>
+ * 使用 {@link JdbcTemplate} 直接操作数据库，与其他 monitor 服务风格保持一致。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -24,12 +26,21 @@ public class AdminFaultServiceImpl implements AdminFaultService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
+    /**
+     * 分页查询故障记录列表，支持按状态筛选。
+     * <p>
+     * 使用手写 SQL 进行分页，按故障时间倒序排列。
+     *
+     * @param pageNum  页码（从 1 开始）
+     * @param pageSize 每页条数
+     * @param status   故障状态筛选（1={@code ACTIVE}，2={@code RECOVERED}），{@code null} 表示全部
+     * @return 分页包装的故障记录列表，每项含 id、pileId、faultCode、faultTime、status 等字段
+     */
     @Override
     public PageResult<Map<String, Object>> listFaults(int pageNum, int pageSize, Integer status) {
         StringBuilder whereSql = new StringBuilder();
         List<Object> params = new ArrayList<>();
 
-        // 状态筛选：1=待处置(ACTIVE), 2=已处置(RECOVERED)
         if (status != null) {
             whereSql.append(" WHERE fault_status = ?");
             params.add(status == 1 ? "ACTIVE" : "RECOVERED");
@@ -68,9 +79,19 @@ public class AdminFaultServiceImpl implements AdminFaultService {
         return PageResult.of(list, total != null ? total : 0, pageNum, pageSize);
     }
 
+    /**
+     * 标记故障为已处置。
+     * <p>
+     * 校验故障存在性和状态后，更新 {@code fault_status} 为 {@code RECOVERED}，
+     * 并记录处置码、备注和恢复时间。
+     *
+     * @param faultId     故障记录 ID
+     * @param resolveCode 处置码（200=复位，201=换硬件，202=换通信，203=重启，204=其他）
+     * @param remark      处置备注
+     * @throws BusinessException 故障不存在（{@link ErrorCode#RESOURCE_NOT_FOUND}）或已处置（{@link ErrorCode#FAULT_ALREADY_RESOLVED}）时抛出
+     */
     @Override
     public void resolveFault(String faultId, Integer resolveCode, String remark) {
-        // 查询故障记录状态
         String selectSql = "SELECT fault_status FROM fault_record WHERE fault_id = ?";
         List<String> results = jdbcTemplate.queryForList(selectSql, String.class, faultId);
         if (results.isEmpty()) {
@@ -80,7 +101,6 @@ public class AdminFaultServiceImpl implements AdminFaultService {
             throw new BusinessException(ErrorCode.FAULT_ALREADY_RESOLVED);
         }
 
-        // 更新为已处置
         String updateSql = "UPDATE fault_record SET fault_status = 'RECOVERED', " +
                            "resolve_code = ?, remark = ?, recover_time = NOW() " +
                            "WHERE fault_id = ?";

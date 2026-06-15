@@ -11,6 +11,8 @@ import java.util.Map;
 
 /**
  * 管理员运营报表 Controller。
+ * <p>
+ * 提供运营数据统计和报表导出（CSV）功能。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -25,7 +27,16 @@ public class AdminReportController {
         this.adminReportService = adminReportService;
     }
 
-    /** 生成运营统计数据 */
+    /**
+     * 生成运营统计数据。
+     *
+     * @param targetType 统计目标类型（{@code all}=全部桩，{@code single}=单桩）
+     * @param pileId     单桩统计时必填，桩 ID
+     * @param timeRange  时间范围（{@code day}=今日，{@code week}=本周，{@code month}=本月，{@code custom}=自定义）
+     * @param startDate  自定义起始日期（{@code yyyy-MM-dd}），仅在 {@code timeRange=custom} 时使用
+     * @param endDate    自定义结束日期（{@code yyyy-MM-dd}），仅在 {@code timeRange=custom} 时使用
+     * @return 运营统计数据，含总充电次数、总收入、故障率等
+     */
     @GetMapping("/reports")
     public Result<Map<String, Object>> generateReport(
             @RequestParam String targetType,
@@ -37,7 +48,16 @@ public class AdminReportController {
                 targetType, pileId, timeRange, startDate, endDate));
     }
 
-    /** 导出报表文件 */
+    /**
+     * 导出报表为 CSV 文件。
+     *
+     * @param targetType 统计目标类型（{@code all}=全部桩，{@code single}=单桩）
+     * @param pileId     单桩统计时必填，桩 ID
+     * @param timeRange  时间范围（{@code day}=今日，{@code week}=本周，{@code month}=本月，{@code custom}=自定义）
+     * @param startDate  自定义起始日期，仅在 {@code timeRange=custom} 时使用
+     * @param endDate    自定义结束日期，仅在 {@code timeRange=custom} 时使用
+     * @return CSV 文件字节流，Content-Disposition 为 {@code attachment; filename=report.csv}
+     */
     @GetMapping("/reports/export")
     public ResponseEntity<byte[]> exportReport(
             @RequestParam String targetType,

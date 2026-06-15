@@ -1,6 +1,5 @@
 package bupt.evchargebackend.service.admin.impl;
 
-import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
 import bupt.evchargebackend.service.admin.AdminPricingService;
@@ -8,12 +7,6 @@ import org.springframework.stereotype.Service;
 
 import java.util.*;
 
-/**
- * 管理员计费规则服务实现。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @Service
 public class AdminPricingServiceImpl implements AdminPricingService {
 
@@ -24,7 +17,7 @@ public class AdminPricingServiceImpl implements AdminPricingService {
     }
 
     @Override
-    public Result<Map<String, Object>> getPricing() {
+    public Map<String, Object> getPricing() {
         List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(null);
 
         Map<String, Object> result = new LinkedHashMap<>();
@@ -32,7 +25,6 @@ public class AdminPricingServiceImpl implements AdminPricingService {
 
         for (BillingRatePeriod p : periods) {
             serviceFeeValue = p.getServicePrice().doubleValue();
-
             switch (p.getPeriodName()) {
                 case PEAK -> {
                     result.put("peakStart", p.getStartTime());
@@ -53,6 +45,6 @@ public class AdminPricingServiceImpl implements AdminPricingService {
         }
 
         result.put("serviceFeeValue", serviceFeeValue);
-        return Result.success(result);
+        return result;
     }
 }

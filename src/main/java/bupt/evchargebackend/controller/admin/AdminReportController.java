@@ -9,12 +9,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * 管理员运营报表 Controller。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @RestController
 @RequestMapping("/admin")
 public class AdminReportController {
@@ -32,7 +26,8 @@ public class AdminReportController {
             @RequestParam String timeRange,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
-        return adminReportService.generateReport(targetType, pileId, timeRange, startDate, endDate);
+        return Result.of(() -> adminReportService.generateReport(
+                targetType, pileId, timeRange, startDate, endDate));
     }
 
     @GetMapping("/reports/export")

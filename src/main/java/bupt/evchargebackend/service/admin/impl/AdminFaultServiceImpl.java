@@ -1,19 +1,14 @@
 package bupt.evchargebackend.service.admin.impl;
 
+import bupt.evchargebackend.common.exception.BusinessException;
+import bupt.evchargebackend.common.exception.ErrorCode;
 import bupt.evchargebackend.common.response.PageResult;
-import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminFaultService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
-/**
- * 管理员故障运维服务实现。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @Service
 public class AdminFaultServiceImpl implements AdminFaultService {
 
@@ -24,7 +19,7 @@ public class AdminFaultServiceImpl implements AdminFaultService {
     }
 
     @Override
-    public Result<PageResult<Map<String, Object>>> listFaults(int pageNum, int pageSize, Integer status) {
+    public PageResult<Map<String, Object>> listFaults(int pageNum, int pageSize, Integer status) {
         StringBuilder whereSql = new StringBuilder();
         List<Object> params = new ArrayList<>();
 
@@ -61,24 +56,23 @@ public class AdminFaultServiceImpl implements AdminFaultService {
             list.add(item);
         }
 
-        return Result.success(PageResult.of(list, total != null ? total : 0, pageNum, pageSize));
+        return PageResult.of(list, total != null ? total : 0, pageNum, pageSize);
     }
 
     @Override
-    public Result<Void> resolveFault(String faultId, Integer resolveCode, String remark) {
+    public void resolveFault(String faultId, Integer resolveCode, String remark) {
         List<String> results = jdbcTemplate.queryForList(
                 "SELECT fault_status FROM fault_record WHERE fault_id = ?", String.class, faultId);
         if (results.isEmpty()) {
-            return Result.error(404, "故障记录不存在");
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
         if ("RECOVERED".equals(results.get(0))) {
-            return Result.error(409, "故障已处置");
+            throw new BusinessException(ErrorCode.FAULT_ALREADY_RESOLVED);
         }
 
         jdbcTemplate.update(
                 "UPDATE fault_record SET fault_status = 'RECOVERED', " +
                 "resolve_code = ?, remark = ?, recover_time = NOW() WHERE fault_id = ?",
                 resolveCode, remark, faultId);
-        return Result.success();
     }
 }

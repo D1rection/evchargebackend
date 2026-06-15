@@ -1,6 +1,6 @@
 package bupt.evchargebackend.service.admin.impl;
 
-import bupt.evchargebackend.common.response.Result;
+import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.service.admin.AdminReportService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -13,12 +13,6 @@ import java.time.format.DateTimeFormatter;
 import java.time.temporal.TemporalAdjusters;
 import java.util.*;
 
-/**
- * 管理员运营报表服务实现。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @Service
 public class AdminReportServiceImpl implements AdminReportService {
 
@@ -29,12 +23,9 @@ public class AdminReportServiceImpl implements AdminReportService {
     }
 
     @Override
-    public Result<Map<String, Object>> generateReport(String targetType, String pileId,
-                                                       String timeRange, String startDate, String endDate) {
+    public Map<String, Object> generateReport(String targetType, String pileId,
+                                              String timeRange, String startDate, String endDate) {
         Map<String, LocalDateTime> range = calculateTimeRange(timeRange, startDate, endDate);
-        if (range == null) {
-            return Result.error(400, "无效的时间范围参数");
-        }
         LocalDateTime start = range.get("start");
         LocalDateTime end = range.get("end");
 
@@ -45,7 +36,7 @@ public class AdminReportServiceImpl implements AdminReportService {
         String pileCondition = "";
         if ("single".equals(targetType)) {
             if (pileId == null || pileId.isEmpty()) {
-                return Result.error(400, "单桩统计时 pileId 为必填");
+                throw new BusinessException(400, "单桩统计时 pileId 为必填");
             }
             pileCondition = " AND pile_id = ?";
             params.add(pileId);
@@ -92,19 +83,17 @@ public class AdminReportServiceImpl implements AdminReportService {
         result.put("totalServiceFee", toDouble(billData.get("totalServiceFee")));
         result.put("avgChargeDuration", toInt(billData.get("avgChargeDuration")));
         result.put("faultRate", toDouble(faultData.get("faultRate")));
-        return Result.success(result);
+        return result;
     }
 
     @Override
     public byte[] exportReport(String targetType, String pileId,
                                String timeRange, String startDate, String endDate) {
-        Map<String, Object> data = generateReport(targetType, pileId, timeRange, startDate, endDate).getData();
+        Map<String, Object> data = generateReport(targetType, pileId, timeRange, startDate, endDate);
         StringBuilder csv = new StringBuilder();
         csv.append("指标,值\n");
-        if (data != null) {
-            for (Map.Entry<String, Object> entry : data.entrySet()) {
-                csv.append(entry.getKey()).append(",").append(entry.getValue()).append("\n");
-            }
+        for (Map.Entry<String, Object> entry : data.entrySet()) {
+            csv.append(entry.getKey()).append(",").append(entry.getValue()).append("\n");
         }
         return csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
@@ -115,23 +104,18 @@ public class AdminReportServiceImpl implements AdminReportService {
         LocalDateTime end = LocalDateTime.now();
 
         switch (timeRange) {
-            case "day":
-                start = today.atStartOfDay();
-                break;
-            case "week":
-                start = today.with(DayOfWeek.MONDAY).atStartOfDay();
-                break;
-            case "month":
-                start = today.with(TemporalAdjusters.firstDayOfMonth()).atStartOfDay();
-                break;
-            case "custom":
-                if (startDate == null || endDate == null) return null;
+            case "day" -> start = today.atStartOfDay();
+            case "week" -> start = today.with(DayOfWeek.MONDAY).atStartOfDay();
+            case "month" -> start = today.with(TemporalAdjusters.firstDayOfMonth()).atStartOfDay();
+            case "custom" -> {
+                if (startDate == null || endDate == null) {
+                    throw new BusinessException(400, "自定义时间范围时 startDate 和 endDate 为必填");
+                }
                 DateTimeFormatter fmt = DateTimeFormatter.ofPattern("yyyy-MM-dd");
                 start = LocalDate.parse(startDate, fmt).atStartOfDay();
                 end = LocalDate.parse(endDate, fmt).atTime(23, 59, 59);
-                break;
-            default:
-                return null;
+            }
+            default -> throw new BusinessException(400, "无效的时间范围: " + timeRange);
         }
 
         Map<String, LocalDateTime> result = new HashMap<>();

@@ -6,12 +6,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * 管理员计费规则 Controller。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @RestController
 @RequestMapping("/admin")
 public class AdminPricingController {
@@ -24,6 +18,6 @@ public class AdminPricingController {
 
     @GetMapping("/pricing")
     public Result<Map<String, Object>> getPricing() {
-        return adminPricingService.getPricing();
+        return Result.of(() -> adminPricingService.getPricing());
     }
 }

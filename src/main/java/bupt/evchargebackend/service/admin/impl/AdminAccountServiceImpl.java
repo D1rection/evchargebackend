@@ -1,7 +1,7 @@
 package bupt.evchargebackend.service.admin.impl;
 
+import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.jwt.JwtUtil;
-import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.entity.user.UserAccount;
 import bupt.evchargebackend.entity.user.enums.UserRole;
 import bupt.evchargebackend.mapper.user.UserAccountMapper;
@@ -13,12 +13,6 @@ import org.springframework.stereotype.Service;
 import java.util.Map;
 import java.util.UUID;
 
-/**
- * 管理员账号服务实现。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @Service
 public class AdminAccountServiceImpl implements AdminAccountService {
 
@@ -31,11 +25,11 @@ public class AdminAccountServiceImpl implements AdminAccountService {
     }
 
     @Override
-    public Result<Map<String, Object>> register(String userName, String password) {
+    public Map<String, Object> register(String userName, String password) {
         LambdaQueryWrapper<UserAccount> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserAccount::getUsername, userName);
         if (userAccountMapper.selectCount(wrapper) > 0) {
-            return Result.error(409, "用户名已存在");
+            throw new BusinessException(409, "用户名已存在");
         }
 
         UserAccount account = new UserAccount();
@@ -45,23 +39,23 @@ public class AdminAccountServiceImpl implements AdminAccountService {
         account.setRole(UserRole.ADMIN);
         userAccountMapper.insert(account);
 
-        return Result.success(Map.of("userId", account.getUserId(),
-                                     "userName", account.getUsername(),
-                                     "role", "ADMIN"));
+        return Map.of("userId", account.getUserId(),
+                      "userName", account.getUsername(),
+                      "role", "ADMIN");
     }
 
     @Override
-    public Result<Map<String, Object>> login(String userName, String password) {
+    public Map<String, Object> login(String userName, String password) {
         LambdaQueryWrapper<UserAccount> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(UserAccount::getUsername, userName);
         UserAccount account = userAccountMapper.selectOne(wrapper);
 
         if (account == null || !BCrypt.checkpw(password, account.getPasswordHash())
                 || account.getRole() != UserRole.ADMIN) {
-            return Result.error(401, "用户名或密码错误");
+            throw new BusinessException(401, "用户名或密码错误");
         }
 
         String token = jwtUtil.generate(account.getUserId(), account.getRole().name());
-        return Result.success(Map.of("userName", account.getUsername(), "token", token));
+        return Map.of("userName", account.getUsername(), "token", token);
     }
 }

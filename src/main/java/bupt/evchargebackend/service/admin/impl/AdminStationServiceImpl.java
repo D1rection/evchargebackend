@@ -1,6 +1,6 @@
 package bupt.evchargebackend.service.admin.impl;
 
-import bupt.evchargebackend.common.response.Result;
+import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.dto.PileRequest;
 import bupt.evchargebackend.dto.StationConfigRequest;
 import bupt.evchargebackend.entity.pile.ChargingPile;
@@ -17,12 +17,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.*;
 
-/**
- * 管理员场站设备服务实现。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @Service
 public class AdminStationServiceImpl implements AdminStationService {
 
@@ -36,19 +30,19 @@ public class AdminStationServiceImpl implements AdminStationService {
     }
 
     @Override
-    public Result<Map<String, Object>> getStationConfig() {
+    public Map<String, Object> getStationConfig() {
         List<StationConfig> configs = stationConfigMapper.selectList(null);
         if (configs.isEmpty()) {
-            return Result.success(Map.of("fastCount", 0, "slowCount", 0, "waitingSpotsPerPile", 2));
+            return Map.of("fastCount", 0, "slowCount", 0, "waitingSpotsPerPile", 2);
         }
         StationConfig config = configs.get(0);
-        return Result.success(Map.of("fastCount", config.getFastCount(),
-                                     "slowCount", config.getSlowCount(),
-                                     "waitingSpotsPerPile", config.getWaitingSpotsPerPile()));
+        return Map.of("fastCount", config.getFastCount(),
+                      "slowCount", config.getSlowCount(),
+                      "waitingSpotsPerPile", config.getWaitingSpotsPerPile());
     }
 
     @Override
-    public Result<Void> updateStationConfig(StationConfigRequest request) {
+    public void updateStationConfig(StationConfigRequest request) {
         List<StationConfig> configs = stationConfigMapper.selectList(null);
         StationConfig config = configs.isEmpty() ? new StationConfig() : configs.get(0);
         config.setFastCount(request.getFastCount());
@@ -59,11 +53,10 @@ public class AdminStationServiceImpl implements AdminStationService {
         } else {
             stationConfigMapper.updateById(config);
         }
-        return Result.success();
     }
 
     @Override
-    public Result<List<Map<String, Object>>> listDevices() {
+    public List<Map<String, Object>> listDevices() {
         List<ChargingPile> piles = chargingPileMapper.selectList(null);
         List<Map<String, Object>> result = new ArrayList<>();
         int index = 1;
@@ -74,11 +67,11 @@ public class AdminStationServiceImpl implements AdminStationService {
                               "pileType", pile.getPileType().name(),
                               "powerKw", pile.getPowerKw()));
         }
-        return Result.success(result);
+        return result;
     }
 
     @Override
-    public Result<Map<String, Object>> addDevice(PileRequest request) {
+    public Map<String, Object> addDevice(PileRequest request) {
         String type = request.getPileType().toUpperCase();
         String prefix = type.equals("FAST") ? "FP" : "SP";
         String suffix = UUID.randomUUID().toString().substring(0, 3).toUpperCase();
@@ -87,7 +80,7 @@ public class AdminStationServiceImpl implements AdminStationService {
         LambdaQueryWrapper<ChargingPile> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(ChargingPile::getPileId, pileId);
         if (chargingPileMapper.selectCount(wrapper) > 0) {
-            return Result.error(409, "充电桩ID已存在");
+            throw new BusinessException(409, "充电桩ID已存在");
         }
 
         ChargingPile pile = new ChargingPile();
@@ -102,30 +95,28 @@ public class AdminStationServiceImpl implements AdminStationService {
         pile.setTotalChargeMinutes(0);
         chargingPileMapper.insert(pile);
 
-        return Result.success(Map.of("pileId", pileId));
+        return Map.of("pileId", pileId);
     }
 
     @Override
-    public Result<Void> updateDevice(String pileId, PileRequest request) {
+    public void updateDevice(String pileId, PileRequest request) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);
         if (pile == null) {
-            return Result.error(404, "充电桩不存在");
+            throw new BusinessException(404, "充电桩不存在");
         }
         if (request.getPileNo() != null) pile.setPileNo(request.getPileNo());
         if (request.getPileType() != null)
             pile.setPileType(PileType.valueOf(request.getPileType().toUpperCase()));
         if (request.getPowerKw() != null) pile.setPowerKw(request.getPowerKw());
         chargingPileMapper.updateById(pile);
-        return Result.success();
     }
 
     @Override
-    public Result<Void> deleteDevice(String pileId) {
+    public void deleteDevice(String pileId) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);
         if (pile == null) {
-            return Result.error(404, "充电桩不存在");
+            throw new BusinessException(404, "充电桩不存在");
         }
         chargingPileMapper.deleteById(pileId);
-        return Result.success();
     }
 }

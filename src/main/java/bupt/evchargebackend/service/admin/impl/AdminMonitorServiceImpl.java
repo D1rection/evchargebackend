@@ -1,7 +1,6 @@
 package bupt.evchargebackend.service.admin.impl;
 
 import bupt.evchargebackend.common.response.PageResult;
-import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminMonitorService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -9,12 +8,6 @@ import org.springframework.stereotype.Service;
 import java.math.BigDecimal;
 import java.util.*;
 
-/**
- * 管理员监控统计服务实现。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @Service
 public class AdminMonitorServiceImpl implements AdminMonitorService {
 
@@ -25,7 +18,7 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
     }
 
     @Override
-    public Result<PageResult<Map<String, Object>>> listPileStatus(Integer pageNum, Integer pageSize) {
+    public PageResult<Map<String, Object>> listPileStatus(Integer pageNum, Integer pageSize) {
         String baseSql = """
                 SELECT
                     cp.pile_id AS pileId,
@@ -49,7 +42,7 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
 
         if (pageNum == null || pageSize == null) {
             List<Map<String, Object>> all = jdbcTemplate.queryForList(baseSql);
-            return Result.success(PageResult.of(all, all.size(), 1, all.size()));
+            return PageResult.of(all, all.size(), 1, all.size());
         }
 
         int offset = (pageNum - 1) * pageSize;
@@ -59,14 +52,15 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         List<Map<String, Object>> list = jdbcTemplate.queryForList(pageSql);
 
         for (Map<String, Object> row : list) {
-            convertDecimal(row, "totalCapacity");
+            Object val = row.get("totalCapacity");
+            if (val instanceof BigDecimal bd) row.put("totalCapacity", bd.doubleValue());
         }
 
-        return Result.success(PageResult.of(list, total != null ? total : 0, pageNum, pageSize));
+        return PageResult.of(list, total != null ? total : 0, pageNum, pageSize);
     }
 
     @Override
-    public Result<Map<String, Object>> getDashboard() {
+    public Map<String, Object> getDashboard() {
         Long todayChargeCount = jdbcTemplate.queryForObject(
                 "SELECT COUNT(*) FROM charging_session WHERE DATE(start_time) = CURDATE()", Long.class);
         BigDecimal todayRevenue = jdbcTemplate.queryForObject(
@@ -83,13 +77,6 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         result.put("todayRevenue", todayRevenue != null ? todayRevenue.doubleValue() : 0.0);
         result.put("onlineRate", onlineRate != null ? onlineRate.doubleValue() : 0.0);
         result.put("faultCount", faultCount != null ? faultCount.intValue() : 0);
-        return Result.success(result);
-    }
-
-    private void convertDecimal(Map<String, Object> row, String key) {
-        Object val = row.get(key);
-        if (val instanceof BigDecimal bd) {
-            row.put(key, bd.doubleValue());
-        }
+        return result;
     }
 }

@@ -8,12 +8,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * 管理员故障运维 Controller。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @RestController
 @RequestMapping("/admin")
 public class AdminFaultController {
@@ -29,12 +23,13 @@ public class AdminFaultController {
             @RequestParam int pageNum,
             @RequestParam int pageSize,
             @RequestParam(required = false) Integer status) {
-        return adminFaultService.listFaults(pageNum, pageSize, status);
+        return Result.of(() -> adminFaultService.listFaults(pageNum, pageSize, status));
     }
 
     @PostMapping("/faults/{faultId}")
     public Result<Void> resolveFault(@PathVariable String faultId,
                                      @RequestBody FaultResolveRequest request) {
-        return adminFaultService.resolveFault(faultId, request.getResolveCode(), request.getRemark());
+        return Result.ofVoid(() -> adminFaultService.resolveFault(
+                faultId, request.getResolveCode(), request.getRemark()));
     }
 }

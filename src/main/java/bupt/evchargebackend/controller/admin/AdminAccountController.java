@@ -7,12 +7,6 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 
-/**
- * 管理员账号 Controller。
- *
- * @author Deng Chao
- * @since 2026-06-15
- */
 @RestController
 @RequestMapping("/admin/account")
 public class AdminAccountController {
@@ -25,11 +19,13 @@ public class AdminAccountController {
 
     @PostMapping("/create")
     public Result<Map<String, Object>> create(@RequestBody AdminAccountRequest request) {
-        return adminAccountService.register(request.getUserName(), request.getPassword());
+        return Result.of(() -> adminAccountService.register(
+                request.getUserName(), request.getPassword()));
     }
 
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody AdminAccountRequest request) {
-        return adminAccountService.login(request.getUserName(), request.getPassword());
+        return Result.of(() -> adminAccountService.login(
+                request.getUserName(), request.getPassword()));
     }
 }

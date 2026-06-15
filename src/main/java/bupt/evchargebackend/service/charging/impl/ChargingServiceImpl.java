@@ -6,6 +6,8 @@ import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
 import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
@@ -19,8 +21,11 @@ import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
+import bupt.evchargebackend.entity.bill.Bill;
+import bupt.evchargebackend.entity.bill.enums.PaymentStatus;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
+import bupt.evchargebackend.mapper.bill.BillMapper;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
@@ -43,6 +48,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class ChargingServiceImpl implements ChargingService {
@@ -54,6 +61,8 @@ public class ChargingServiceImpl implements ChargingService {
     private final ChargingSessionMapper chargingSessionMapper;
     private final BillingRatePeriodMapper billingRatePeriodMapper;
     private final QueueEntryMapper queueEntryMapper;
+    private final BillMapper billMapper;
+    private final ScheduledExecutorService scheduler;
     private final TimeProvider timeProvider;
 
     public ChargingServiceImpl(ChargingOrderMapper chargingOrderMapper, CarMapper carMapper,
@@ -61,6 +70,8 @@ public class ChargingServiceImpl implements ChargingService {
                                ChargingSessionMapper chargingSessionMapper,
                                BillingRatePeriodMapper billingRatePeriodMapper,
                                QueueEntryMapper queueEntryMapper,
+                               BillMapper billMapper,
+                               ScheduledExecutorService scheduler,
                                TimeProvider timeProvider) {
         this.chargingOrderMapper = chargingOrderMapper;
         this.carMapper = carMapper;
@@ -69,6 +80,8 @@ public class ChargingServiceImpl implements ChargingService {
         this.chargingSessionMapper = chargingSessionMapper;
         this.billingRatePeriodMapper = billingRatePeriodMapper;
         this.queueEntryMapper = queueEntryMapper;
+        this.billMapper = billMapper;
+        this.scheduler = scheduler;
         this.timeProvider = timeProvider;
     }
 
@@ -435,6 +448,105 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     @Override
+    public Result<ChargingEndResponse> end(ChargingEndRequest request) {
+        // 1. 校验参数
+        String carId = request.getCarId();
+        String pileId = request.getChargingPileNum();
+        if (!hasText(carId)) {
+            return Result.error(400, "车辆 ID 不能为空");
+        }
+        if (!hasText(pileId)) {
+            return Result.error(400, "充电桩 ID 不能为空");
+        }
+
+        // 2. 查找充电会话
+        ChargingSession session = chargingSessionMapper.selectOne(
+                new QueryWrapper<ChargingSession>()
+                        .eq("car_id", carId)
+                        .eq("pile_id", pileId)
+                        .eq("session_status", SessionStatus.CHARGING)
+                        .orderByDesc("created_at")
+                        .last("LIMIT 1")
+        );
+        if (session == null) {
+            return Result.error(400, "未找到充电中的会话");
+        }
+
+        // 3. 查找订单和桩
+        ChargingOrder order = chargingOrderMapper.selectById(session.getOrderId());
+        if (order == null) {
+            return Result.error(404, "订单不存在");
+        }
+        ChargingPile pile = chargingPileMapper.selectById(pileId);
+        if (pile == null) {
+            return Result.error(404, "充电桩不存在");
+        }
+
+        // 4. 计算费用
+        PileType pileType = pile.getPileType();
+        BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
+        BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+        LocalDateTime endTime = timeProvider.now();
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+
+        FeeResult feeResult = calculateFees(power, target, session.getStartTime(), endTime, periods);
+        long chargeMinutes = Duration.between(session.getStartTime(), endTime).toMinutes();
+
+        // 5. 创建账单
+        Bill bill = new Bill();
+        bill.setBillId(UUID.randomUUID().toString());
+        bill.setBillNo("BILL-" + System.currentTimeMillis());
+        bill.setOrderId(order.getOrderId());
+        bill.setSessionId(session.getSessionId());
+        bill.setCarId(carId);
+        bill.setPileId(pileId);
+        bill.setStartTime(session.getStartTime());
+        bill.setEndTime(endTime);
+        bill.setChargedKwh(feeResult.totalKwh.setScale(2, RoundingMode.HALF_UP));
+        bill.setChargeMinutes((int) chargeMinutes);
+        bill.setElectricityFee(feeResult.chargeFee.setScale(2, RoundingMode.HALF_UP));
+        bill.setServiceFee(feeResult.serviceFee.setScale(2, RoundingMode.HALF_UP));
+        bill.setTotalFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+        bill.setPaymentStatus(PaymentStatus.UNPAID);
+        billMapper.insert(bill);
+
+        // 6. 更新会话
+        session.setSessionStatus(SessionStatus.FINISHED);
+        session.setEndTime(endTime);
+        session.setChargedKwh(feeResult.totalKwh);
+        chargingSessionMapper.updateById(session);
+
+        // 7. 更新订单
+        order.setOrderStatus(OrderStatus.FINISHED);
+        chargingOrderMapper.updateById(order);
+
+        // 8. 更新桩
+        pile.setWorkingState(WorkingState.AVAILABLE);
+        pile.setCurrentSessionId(null);
+        chargingPileMapper.updateById(pile);
+
+        // 9. 删 queue_entry + 引擎释放
+        QueueEntry qe = queueEntryMapper.selectOne(
+                new QueryWrapper<QueueEntry>()
+                        .eq("queue_type", "PILE")
+                        .eq("queue_key", pileId)
+                        .orderByAsc("id")
+                        .last("LIMIT 1")
+        );
+        if (qe != null) {
+            queueEntryMapper.deleteById(qe.getId());
+        }
+        engine.onPileReleased(pileId, pileType);
+
+        ChargingEndResponse resp = new ChargingEndResponse();
+        resp.setResult(1);
+        return Result.success(resp);
+    }
+
+    @Override
     public ChargingOrder modifyAmount(String carId, BigDecimal amount) {
         if (!hasText(carId)) {
             throw new BusinessException("carId is required");
@@ -561,9 +673,77 @@ public class ChargingServiceImpl implements ChargingService {
         pile.setCurrentSessionId(session.getSessionId());
         chargingSessionMapper.insert(session);
 
+        // 预约充满自动结束
+        BigDecimal powerKw = BigDecimal.valueOf(pile.getPowerKw());
+        long delayMs = order.getTargetKwh()
+                .divide(powerKw, 10, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(3600_000))
+                .longValue();
+        String sid = session.getSessionId();
+        scheduler.schedule(() -> autoFinish(sid), delayMs, TimeUnit.MILLISECONDS);
+
         order.setOrderStatus(OrderStatus.CHARGING);
         chargingOrderMapper.updateById(order);
         engine.setCharging(pile.getPileId(), order);
+    }
+
+    private void autoFinish(String sessionId) {
+        ChargingSession session = chargingSessionMapper.selectById(sessionId);
+        if (session == null || session.getSessionStatus() != SessionStatus.CHARGING) return;
+
+        ChargingOrder order = chargingOrderMapper.selectById(session.getOrderId());
+        ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
+        if (order == null || pile == null) return;
+
+        PileType pileType = pile.getPileType();
+        BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
+        BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+        LocalDateTime endTime = timeProvider.now();
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+        FeeResult feeResult = calculateFees(power, target, session.getStartTime(), endTime, periods);
+        long chargeMinutes = Duration.between(session.getStartTime(), endTime).toMinutes();
+
+        Bill bill = new Bill();
+        bill.setBillId(UUID.randomUUID().toString());
+        bill.setBillNo("BILL-" + System.currentTimeMillis());
+        bill.setOrderId(order.getOrderId());
+        bill.setSessionId(session.getSessionId());
+        bill.setCarId(session.getCarId());
+        bill.setPileId(pile.getPileId());
+        bill.setStartTime(session.getStartTime());
+        bill.setEndTime(endTime);
+        bill.setChargedKwh(feeResult.totalKwh.setScale(2, RoundingMode.HALF_UP));
+        bill.setChargeMinutes((int) chargeMinutes);
+        bill.setElectricityFee(feeResult.chargeFee.setScale(2, RoundingMode.HALF_UP));
+        bill.setServiceFee(feeResult.serviceFee.setScale(2, RoundingMode.HALF_UP));
+        bill.setTotalFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+        bill.setPaymentStatus(PaymentStatus.UNPAID);
+        billMapper.insert(bill);
+
+        session.setSessionStatus(SessionStatus.FINISHED);
+        session.setEndTime(endTime);
+        session.setChargedKwh(feeResult.totalKwh);
+        chargingSessionMapper.updateById(session);
+
+        order.setOrderStatus(OrderStatus.FINISHED);
+        chargingOrderMapper.updateById(order);
+
+        pile.setWorkingState(WorkingState.AVAILABLE);
+        pile.setCurrentSessionId(null);
+        chargingPileMapper.updateById(pile);
+
+        QueueEntry qe = queueEntryMapper.selectOne(
+                new QueryWrapper<QueueEntry>()
+                        .eq("queue_type", "PILE")
+                        .eq("queue_key", pile.getPileId())
+                        .orderByAsc("id")
+                        .last("LIMIT 1")
+        );
+        if (qe != null) queueEntryMapper.deleteById(qe.getId());
+        engine.onPileReleased(pile.getPileId(), pileType);
     }
 
     private void insertQueueEntry(String queueType, String queueKey, String orderId) {

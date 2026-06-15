@@ -5,6 +5,8 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.ChargingEndRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
@@ -43,6 +45,11 @@ public interface ChargingService {
      * 查看充电状态：查询充电进度、费用和时段电价。
      */
     Result<ChargingStateResponse> chargingState(String carId);
+
+    /**
+     * 结束充电：创建账单，释放充电桩。
+     */
+    Result<ChargingEndResponse> end(ChargingEndRequest request);
 
     ChargingOrder modifyAmount(String carId, BigDecimal amount);
 

@@ -20,6 +20,7 @@ import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
+import bupt.evchargebackend.mapper.bill.BillMapper;
 import bupt.evchargebackend.mapper.queue.QueueEntryMapper;
 import bupt.evchargebackend.mapper.user.CarMapper;
 import bupt.evchargebackend.service.charging.impl.ChargingServiceImpl;
@@ -33,6 +34,7 @@ import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ScheduledExecutorService;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
@@ -51,6 +53,8 @@ class ChargingServiceImplTest {
     private ChargingSessionMapper chargingSessionMapper;
     private BillingRatePeriodMapper billingRatePeriodMapper;
     private QueueEntryMapper queueEntryMapper;
+    private BillMapper billMapper;
+    private ScheduledExecutorService scheduler;
     private SchedulingEngine engine;
     private TimeProvider timeProvider;
     private ChargingServiceImpl service;
@@ -71,12 +75,14 @@ class ChargingServiceImplTest {
         chargingSessionMapper = mock(ChargingSessionMapper.class);
         billingRatePeriodMapper = mock(BillingRatePeriodMapper.class);
         queueEntryMapper = mock(QueueEntryMapper.class);
+        billMapper = mock(BillMapper.class);
+        scheduler = mock(ScheduledExecutorService.class);
         engine = mock(SchedulingEngine.class);
         timeProvider = mock(TimeProvider.class);
 
         service = new ChargingServiceImpl(chargingOrderMapper, carMapper,
                 engine, chargingPileMapper, chargingSessionMapper,
-                billingRatePeriodMapper, queueEntryMapper, timeProvider);
+                billingRatePeriodMapper, queueEntryMapper, billMapper, scheduler, timeProvider);
 
         Car car = new Car();
         car.setCarId(CAR_ID);

@@ -6,6 +6,8 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.ChargingEndRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
@@ -69,6 +71,14 @@ public class ChargingController {
     @GetMapping("/state")
     public Result<ChargingStateResponse> state(@RequestParam String carId) {
         return chargingService.chargingState(carId);
+    }
+
+    /**
+     * 结束充电：用户主动结束或系统自动充满后结束，创建账单并释放充电桩。
+     */
+    @PostMapping("/end")
+    public Result<ChargingEndResponse> end(@Valid @RequestBody ChargingEndRequest request) {
+        return chargingService.end(request);
     }
 
     @PostMapping("/modify-amount")

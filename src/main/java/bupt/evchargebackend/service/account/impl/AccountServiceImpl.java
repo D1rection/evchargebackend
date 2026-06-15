@@ -14,6 +14,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -88,10 +89,8 @@ public class AccountServiceImpl implements AccountService {
         String role = account.getRole().name();
         String token = jwtUtil.generate(account.getUserId(), role);
 
-        Map<String, Object> data = new LinkedHashMap<>();
+        Map<String, Object> data = buildUserData(account);
         data.put("token", token);
-        data.put("userId", account.getUserId());
-        data.put("username", account.getUsername());
         data.put("role", role);
         return data;
     }
@@ -134,10 +133,13 @@ public class AccountServiceImpl implements AccountService {
         try {
             String userId = jwtUtil.parseUserId(token);
             String role = jwtUtil.parseRole(token);
+            UserAccount account = userAccountMapper.selectById(userId);
+            if (account == null) {
+                throw new BusinessException(401, "token is invalid or expired");
+            }
 
-            Map<String, Object> data = new LinkedHashMap<>();
+            Map<String, Object> data = buildUserData(account);
             data.put("valid", true);
-            data.put("userId", userId);
             data.put("role", role);
             return data;
         } catch (Exception e) {
@@ -170,5 +172,28 @@ public class AccountServiceImpl implements AccountService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private Map<String, Object> buildUserData(UserAccount account) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("userName", account.getUsername());
+        data.put("vehicles", listVehicleData(account.getUserId()));
+        data.put("userId", account.getUserId());
+        return data;
+    }
+
+    private List<Map<String, Object>> listVehicleData(String userId) {
+        return carMapper.selectList(new QueryWrapper<Car>().eq("user_id", userId))
+                .stream()
+                .map(this::buildVehicleData)
+                .toList();
+    }
+
+    private Map<String, Object> buildVehicleData(Car car) {
+        Map<String, Object> vehicle = new LinkedHashMap<>();
+        vehicle.put("carId", car.getCarId());
+        vehicle.put("carNo", car.getCarNo());
+        vehicle.put("carCapacity", car.getBatteryCapacityKwh());
+        return vehicle;
     }
 }

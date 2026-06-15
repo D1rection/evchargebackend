@@ -21,4 +21,43 @@ public class QueueStatusResponse {
     private String requestTime;
     /** 分配的充电桩 ID（called/charging 时有值） */
     private String assignedPileNum;
+    public String getCarState() {
+        return carState;
+    }
+
+    public void setCarState(String carState) {
+        this.carState = carState;
+    }
+
+    public Integer getQueueNum() {
+        return queueNum;
+    }
+
+    public void setQueueNum(Integer queueNum) {
+        this.queueNum = queueNum;
+    }
+
+    public Integer getCarNumberBeforePosition() {
+        return carNumberBeforePosition;
+    }
+
+    public void setCarNumberBeforePosition(Integer carNumberBeforePosition) {
+        this.carNumberBeforePosition = carNumberBeforePosition;
+    }
+
+    public String getRequestTime() {
+        return requestTime;
+    }
+
+    public void setRequestTime(String requestTime) {
+        this.requestTime = requestTime;
+    }
+
+    public String getAssignedPileNum() {
+        return assignedPileNum;
+    }
+
+    public void setAssignedPileNum(String assignedPileNum) {
+        this.assignedPileNum = assignedPileNum;
+    }
 }

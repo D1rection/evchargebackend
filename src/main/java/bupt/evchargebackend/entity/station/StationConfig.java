@@ -31,4 +31,43 @@ public class StationConfig {
     /** 更新时间 */
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+    public Integer getId() {
+        return id;
+    }
+
+    public void setId(Integer id) {
+        this.id = id;
+    }
+
+    public Integer getFastCount() {
+        return fastCount;
+    }
+
+    public void setFastCount(Integer fastCount) {
+        this.fastCount = fastCount;
+    }
+
+    public Integer getSlowCount() {
+        return slowCount;
+    }
+
+    public void setSlowCount(Integer slowCount) {
+        this.slowCount = slowCount;
+    }
+
+    public Integer getWaitingSpotsPerPile() {
+        return waitingSpotsPerPile;
+    }
+
+    public void setWaitingSpotsPerPile(Integer waitingSpotsPerPile) {
+        this.waitingSpotsPerPile = waitingSpotsPerPile;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

@@ -37,4 +37,99 @@ public class ChargingStateResponse {
     private BigDecimal currentPeriodPrice;
     /** 下一时段电价（元/kWh） */
     private BigDecimal nextPeriodPrice;
+    public String getCarId() {
+        return carId;
+    }
+
+    public void setCarId(String carId) {
+        this.carId = carId;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    public String getOrderId() {
+        return orderId;
+    }
+
+    public void setOrderId(String orderId) {
+        this.orderId = orderId;
+    }
+
+    public String getPileNum() {
+        return pileNum;
+    }
+
+    public void setPileNum(String pileNum) {
+        this.pileNum = pileNum;
+    }
+
+    public String getStartTime() {
+        return startTime;
+    }
+
+    public void setStartTime(String startTime) {
+        this.startTime = startTime;
+    }
+
+    public String getCurrentDuration() {
+        return currentDuration;
+    }
+
+    public void setCurrentDuration(String currentDuration) {
+        this.currentDuration = currentDuration;
+    }
+
+    public BigDecimal getCurrentAmount() {
+        return currentAmount;
+    }
+
+    public void setCurrentAmount(BigDecimal currentAmount) {
+        this.currentAmount = currentAmount;
+    }
+
+    public BigDecimal getCurrentChargeFee() {
+        return currentChargeFee;
+    }
+
+    public void setCurrentChargeFee(BigDecimal currentChargeFee) {
+        this.currentChargeFee = currentChargeFee;
+    }
+
+    public BigDecimal getCurrentServiceFee() {
+        return currentServiceFee;
+    }
+
+    public void setCurrentServiceFee(BigDecimal currentServiceFee) {
+        this.currentServiceFee = currentServiceFee;
+    }
+
+    public BigDecimal getTotalCurrentFee() {
+        return totalCurrentFee;
+    }
+
+    public void setTotalCurrentFee(BigDecimal totalCurrentFee) {
+        this.totalCurrentFee = totalCurrentFee;
+    }
+
+    public BigDecimal getCurrentPeriodPrice() {
+        return currentPeriodPrice;
+    }
+
+    public void setCurrentPeriodPrice(BigDecimal currentPeriodPrice) {
+        this.currentPeriodPrice = currentPeriodPrice;
+    }
+
+    public BigDecimal getNextPeriodPrice() {
+        return nextPeriodPrice;
+    }
+
+    public void setNextPeriodPrice(BigDecimal nextPeriodPrice) {
+        this.nextPeriodPrice = nextPeriodPrice;
+    }
 }

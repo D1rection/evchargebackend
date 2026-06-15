@@ -5,6 +5,8 @@ import bupt.evchargebackend.common.exception.ErrorCode;
 import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
+import bupt.evchargebackend.dto.charging.ChargingStartRequest;
+import bupt.evchargebackend.dto.charging.ChargingStartResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
 import bupt.evchargebackend.entity.charging.enums.OrderStatus;
@@ -12,6 +14,7 @@ import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
 import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
+import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
@@ -167,6 +170,61 @@ public class ChargingServiceImpl implements ChargingService {
         resp.setEstimatedFee(estimatedFee);
         resp.setEstimatedMinutes(estimatedMinutes);
 
+        return Result.success(resp);
+    }
+
+    @Override
+    public Result<ChargingStartResponse> start(ChargingStartRequest request) {
+        // 1. 校验 carId
+        String carId = request.getCarId();
+        if (!hasText(carId)) {
+            return Result.error(400, "车辆 ID 不能为空");
+        }
+
+        // 2. 校验车辆是否存在
+        var car = carMapper.selectById(carId);
+        if (car == null) {
+            return Result.error(404, "车辆不存在");
+        }
+
+        // 3. 查找 CALLED 状态的订单
+        ChargingOrder order = chargingOrderMapper.selectOne(
+                new QueryWrapper<ChargingOrder>()
+                        .eq("car_id", carId)
+                        .eq("order_status", "CALLED")
+                        .orderByDesc("created_at")
+                        .last("LIMIT 1")
+        );
+        if (order == null) {
+            return Result.error(400, "该车辆没有待充电的订单");
+        }
+
+        // 4. 查找充电桩
+        String pileId = request.getChargePileNum();
+        ChargingPile pile = chargingPileMapper.selectById(pileId);
+        if (pile == null) {
+            return Result.error(404, "充电桩不存在");
+        }
+
+        // 5. 校验桩状态（电源开启 + 可用）
+        if (pile.getPowerState() != PowerState.ON) {
+            return Result.error(400, "充电桩电源未开启");
+        }
+        if (pile.getWorkingState() != WorkingState.AVAILABLE) {
+            return Result.error(400, "充电桩当前不可用");
+        }
+
+        // 6. 校验桩队列头部是该订单
+        ChargingOrder head = engine.peekPileQueue(pileId);
+        if (head == null || !head.getOrderId().equals(order.getOrderId())) {
+            return Result.error(400, "该订单不在充电桩队列首位");
+        }
+
+        // 7. 开始充电
+        startCharging(pile, order);
+
+        ChargingStartResponse resp = new ChargingStartResponse();
+        resp.setResult(1);
         return Result.success(resp);
     }
 

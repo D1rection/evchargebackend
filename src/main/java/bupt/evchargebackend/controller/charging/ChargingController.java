@@ -4,6 +4,8 @@ import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
+import bupt.evchargebackend.dto.charging.ChargingStartRequest;
+import bupt.evchargebackend.dto.charging.ChargingStartResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.service.charging.ChargingService;
@@ -32,6 +34,14 @@ public class ChargingController {
     @PostMapping("/request")
     public Result<ChargingResponse> submit(@Valid @RequestBody ChargingRequest request) {
         return chargingService.submit(request);
+    }
+
+    /**
+     * 开始充电：用户确认后开始充电，创建充电会话，更新桩状态。
+     */
+    @PostMapping("/start")
+    public Result<ChargingStartResponse> start(@Valid @RequestBody ChargingStartRequest request) {
+        return chargingService.start(request);
     }
 
     @PostMapping("/modify-amount")

@@ -107,6 +107,11 @@ public class SchedulingEngine {
         return List.copyOf(copy);
     }
 
+    /** 查看桩队列 position 0（充电中或即将充电的订单）。 */
+    public ChargingOrder peekPileQueue(String pileId) {
+        return pileQueue(pileId).peekFirst();
+    }
+
     public boolean addToPileQueue(String pileId, ChargingOrder order) {
         Deque<ChargingOrder> pq = pileQueue(pileId);
         if (pq.size() >= maxPileQueue) return false;

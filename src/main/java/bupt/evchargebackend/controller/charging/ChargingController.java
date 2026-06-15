@@ -10,10 +10,12 @@ import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.service.charging.ChargingService;
 import jakarta.validation.Valid;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
-import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -40,17 +42,6 @@ public class ChargingController {
     @PostMapping("/start")
     public Result<ChargingStartResponse> start(@Valid @RequestBody ChargingStartRequest request) {
         return chargingService.start(request);
-    }
-
-    /**
-     * 查询指定时间对应的分时电价。
-     *
-     * @param time 时间（HH:mm），如 "14:30"
-     * @return 匹配的时段及电价
-     */
-    @GetMapping("/periods")
-    public Result<List<Map<String, Object>>> getPeriods(@RequestParam String time) {
-        return chargingService.getPeriodByTime(time);
     }
 
     @PostMapping("/modify-amount")

@@ -34,7 +34,6 @@ import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -230,42 +229,6 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     @Override
-    public Result<List<Map<String, Object>>> getPeriodByTime(String time) {
-        int minutes = parseMinutes(time);
-
-        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(null);
-        List<Map<String, Object>> result = new java.util.ArrayList<>();
-
-        for (BillingRatePeriod p : periods) {
-            int start = parseMinutes(p.getStartTime());
-            int end = parseMinutes(p.getEndTime());
-
-            boolean matched;
-            if (start <= end) {
-                matched = start <= minutes && minutes < end;
-            } else {
-                matched = minutes >= start || minutes < end;
-            }
-
-            if (matched) {
-                Map<String, Object> item = new java.util.LinkedHashMap<>();
-                item.put("periodName", p.getPeriodName().name());
-                item.put("startTime", p.getStartTime());
-                item.put("endTime", p.getEndTime());
-                item.put("electricityPrice", p.getElectricityPrice().doubleValue());
-                item.put("servicePrice", p.getServicePrice().doubleValue());
-                result.add(item);
-            }
-        }
-
-        if (result.isEmpty()) {
-            throw new BusinessException(400, "未找到匹配的计费时段");
-        }
-
-        return Result.success(result);
-    }
-
-    @Override
     public ChargingOrder modifyAmount(String carId, BigDecimal amount) {
         if (!hasText(carId)) {
             throw new BusinessException("carId is required");
@@ -311,23 +274,6 @@ public class ChargingServiceImpl implements ChargingService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
-    }
-
-    /** 将 HH:mm 格式转为当天分钟数。 */
-    private int parseMinutes(String time) {
-        if (time == null || !time.matches("\\d{1,2}:\\d{2}")) {
-            throw new BusinessException(400, "时间格式无效，应为 HH:mm");
-        }
-        String[] parts = time.split(":");
-        int h = Integer.parseInt(parts[0]);
-        int m = Integer.parseInt(parts[1]);
-        if (h == 24 && m == 0) {
-            return 24 * 60;
-        }
-        if (h < 0 || h > 23 || m < 0 || m > 59) {
-            throw new BusinessException(400, "时间值无效，小时 0~23，分钟 0~59");
-        }
-        return h * 60 + m;
     }
 
     /** 查询当前时段的电价 + 服务费（元/kWh）。 */

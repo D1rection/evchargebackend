@@ -57,4 +57,100 @@ public class ChargingPile {
     /** 更新时间 */
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+
+    public String getPileId() {
+        return pileId;
+    }
+
+    public void setPileId(String pileId) {
+        this.pileId = pileId;
+    }
+
+    public String getPileNo() {
+        return pileNo;
+    }
+
+    public void setPileNo(String pileNo) {
+        this.pileNo = pileNo;
+    }
+
+    public PileType getPileType() {
+        return pileType;
+    }
+
+    public void setPileType(PileType pileType) {
+        this.pileType = pileType;
+    }
+
+    public Integer getPowerKw() {
+        return powerKw;
+    }
+
+    public void setPowerKw(Integer powerKw) {
+        this.powerKw = powerKw;
+    }
+
+    public PowerState getPowerState() {
+        return powerState;
+    }
+
+    public void setPowerState(PowerState powerState) {
+        this.powerState = powerState;
+    }
+
+    public WorkingState getWorkingState() {
+        return workingState;
+    }
+
+    public void setWorkingState(WorkingState workingState) {
+        this.workingState = workingState;
+    }
+
+    public String getCurrentSessionId() {
+        return currentSessionId;
+    }
+
+    public void setCurrentSessionId(String currentSessionId) {
+        this.currentSessionId = currentSessionId;
+    }
+
+    public BigDecimal getTotalChargeKwh() {
+        return totalChargeKwh;
+    }
+
+    public void setTotalChargeKwh(BigDecimal totalChargeKwh) {
+        this.totalChargeKwh = totalChargeKwh;
+    }
+
+    public Integer getTotalChargeCount() {
+        return totalChargeCount;
+    }
+
+    public void setTotalChargeCount(Integer totalChargeCount) {
+        this.totalChargeCount = totalChargeCount;
+    }
+
+    public Integer getTotalChargeMinutes() {
+        return totalChargeMinutes;
+    }
+
+    public void setTotalChargeMinutes(Integer totalChargeMinutes) {
+        this.totalChargeMinutes = totalChargeMinutes;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

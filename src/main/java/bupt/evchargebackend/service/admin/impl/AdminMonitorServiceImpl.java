@@ -20,6 +20,9 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
 
     @Override
     public Result<PageResult<Map<String, Object>>> listPileStatus(Integer pageNum, Integer pageSize) {
+        if (pageNum == null || pageNum < 1) pageNum = 1;
+        if (pageSize == null || pageSize < 1) pageSize = 10;
+
         String baseSql = """
                 SELECT
                     cp.pile_id AS pileId,

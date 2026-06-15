@@ -21,6 +21,9 @@ public class AdminFaultServiceImpl implements AdminFaultService {
 
     @Override
     public Result<PageResult<Map<String, Object>>> listFaults(int pageNum, int pageSize, Integer status) {
+        if (pageNum < 1) pageNum = 1;
+        if (pageSize < 1) pageSize = 10;
+
         StringBuilder whereSql = new StringBuilder();
         List<Object> params = new ArrayList<>();
 

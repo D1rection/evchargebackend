@@ -138,10 +138,11 @@ public class SchedulingEngine {
         return pq.add(order);
     }
 
-    /** 将即将充电的订单设为 position 0（跳过已在 position 0 的订单）。 */
+    /** 将即将充电的订单设为 position 0（已在 position 0 则跳过）。 */
     public void setCharging(String pileId, ChargingOrder order) {
         Deque<ChargingOrder> pq = pileQueue(pileId);
-        if (pq.peekFirst() == order) return;
+        ChargingOrder first = pq.peekFirst();
+        if (first != null && first.getOrderId().equals(order.getOrderId())) return;
         pq.addFirst(order);
     }
 

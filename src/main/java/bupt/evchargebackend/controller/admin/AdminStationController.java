@@ -1,6 +1,5 @@
 package bupt.evchargebackend.controller.admin;
 
-import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.PileRequest;
 import bupt.evchargebackend.dto.StationConfigRequest;
 import bupt.evchargebackend.service.admin.AdminStationService;
@@ -20,36 +19,33 @@ public class AdminStationController {
     }
 
     @GetMapping("/station-config")
-    public Result<Map<String, Object>> getStationConfig() {
-        return Result.success(adminStationService.getStationConfig());
+    public Map<String, Object> getStationConfig() {
+        return adminStationService.getStationConfig();
     }
 
     @PostMapping("/station-config")
-    public Result<Void> updateStationConfig(@RequestBody StationConfigRequest request) {
+    public void updateStationConfig(@RequestBody StationConfigRequest request) {
         adminStationService.updateStationConfig(request);
-        return Result.success();
     }
 
     @GetMapping("/devices")
-    public Result<List<Map<String, Object>>> listDevices() {
-        return Result.success(adminStationService.listDevices());
+    public List<Map<String, Object>> listDevices() {
+        return adminStationService.listDevices();
     }
 
     @PostMapping("/devices")
-    public Result<Map<String, Object>> addDevice(@RequestBody PileRequest request) {
-        return Result.success(adminStationService.addDevice(request));
+    public Map<String, Object> addDevice(@RequestBody PileRequest request) {
+        return adminStationService.addDevice(request);
     }
 
     @PostMapping("/devices/update/{pileId}")
-    public Result<Void> updateDevice(@PathVariable String pileId,
-                                     @RequestBody PileRequest request) {
+    public void updateDevice(@PathVariable String pileId,
+                             @RequestBody PileRequest request) {
         adminStationService.updateDevice(pileId, request);
-        return Result.success();
     }
 
     @PostMapping("/devices/delete/{pileId}")
-    public Result<Void> deleteDevice(@PathVariable String pileId) {
+    public void deleteDevice(@PathVariable String pileId) {
         adminStationService.deleteDevice(pileId);
-        return Result.success();
     }
 }

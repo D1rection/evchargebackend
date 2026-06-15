@@ -1,7 +1,6 @@
 package bupt.evchargebackend.controller.admin;
 
 import bupt.evchargebackend.common.response.PageResult;
-import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminMonitorService;
 import org.springframework.web.bind.annotation.*;
 
@@ -18,14 +17,14 @@ public class AdminMonitorController {
     }
 
     @GetMapping("/piles")
-    public Result<PageResult<Map<String, Object>>> listPiles(
+    public PageResult<Map<String, Object>> listPiles(
             @RequestParam(required = false) Integer pageNum,
             @RequestParam(required = false) Integer pageSize) {
-        return Result.success(adminMonitorService.listPileStatus(pageNum, pageSize));
+        return adminMonitorService.listPileStatus(pageNum, pageSize);
     }
 
     @GetMapping("/dashboard")
-    public Result<Map<String, Object>> dashboard() {
-        return Result.success(adminMonitorService.getDashboard());
+    public Map<String, Object> dashboard() {
+        return adminMonitorService.getDashboard();
     }
 }

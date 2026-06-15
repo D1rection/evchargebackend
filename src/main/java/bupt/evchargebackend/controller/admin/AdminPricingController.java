@@ -1,6 +1,5 @@
 package bupt.evchargebackend.controller.admin;
 
-import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminPricingService;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,7 +16,7 @@ public class AdminPricingController {
     }
 
     @GetMapping("/pricing")
-    public Result<Map<String, Object>> getPricing() {
-        return Result.success(adminPricingService.getPricing());
+    public Map<String, Object> getPricing() {
+        return adminPricingService.getPricing();
     }
 }

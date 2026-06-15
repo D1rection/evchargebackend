@@ -1,6 +1,5 @@
 package bupt.evchargebackend.controller.admin;
 
-import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminReportService;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -20,14 +19,13 @@ public class AdminReportController {
     }
 
     @GetMapping("/reports")
-    public Result<Map<String, Object>> generateReport(
+    public Map<String, Object> generateReport(
             @RequestParam String targetType,
             @RequestParam(required = false) String pileId,
             @RequestParam String timeRange,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
-        return Result.success(adminReportService.generateReport(
-                targetType, pileId, timeRange, startDate, endDate));
+        return adminReportService.generateReport(targetType, pileId, timeRange, startDate, endDate);
     }
 
     @GetMapping("/reports/export")

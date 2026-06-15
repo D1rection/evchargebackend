@@ -5,6 +5,10 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndResponse;
+import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
@@ -37,6 +41,21 @@ public interface ChargingService {
      * 查看车辆队列状态：查询车辆在等候区或充电区的排队位置。
      */
     Result<QueueStatusResponse> queueStatus(String carId);
+
+    /**
+     * 查看充电状态：查询充电进度、费用和时段电价。
+     */
+    Result<ChargingStateResponse> chargingState(String carId);
+
+    /**
+     * 结束充电：创建账单，释放充电桩。
+     */
+    Result<ChargingEndResponse> end(ChargingEndRequest request);
+
+    /**
+     * 取消充电申请：从等候区或桩队列中移除订单。
+     */
+    Result<ChargingEndResponse> cancel(ChargingCancelRequest request);
 
     ChargingOrder modifyAmount(String carId, BigDecimal amount);
 

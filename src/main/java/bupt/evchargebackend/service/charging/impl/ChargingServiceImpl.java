@@ -6,7 +6,11 @@ import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
+import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
@@ -18,8 +22,11 @@ import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
+import bupt.evchargebackend.entity.bill.Bill;
+import bupt.evchargebackend.entity.bill.enums.PaymentStatus;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
+import bupt.evchargebackend.mapper.bill.BillMapper;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
@@ -33,6 +40,8 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
@@ -40,6 +49,8 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class ChargingServiceImpl implements ChargingService {
@@ -51,6 +62,8 @@ public class ChargingServiceImpl implements ChargingService {
     private final ChargingSessionMapper chargingSessionMapper;
     private final BillingRatePeriodMapper billingRatePeriodMapper;
     private final QueueEntryMapper queueEntryMapper;
+    private final BillMapper billMapper;
+    private final ScheduledExecutorService scheduler;
     private final TimeProvider timeProvider;
 
     public ChargingServiceImpl(ChargingOrderMapper chargingOrderMapper, CarMapper carMapper,
@@ -58,6 +71,8 @@ public class ChargingServiceImpl implements ChargingService {
                                ChargingSessionMapper chargingSessionMapper,
                                BillingRatePeriodMapper billingRatePeriodMapper,
                                QueueEntryMapper queueEntryMapper,
+                               BillMapper billMapper,
+                               ScheduledExecutorService scheduler,
                                TimeProvider timeProvider) {
         this.chargingOrderMapper = chargingOrderMapper;
         this.carMapper = carMapper;
@@ -66,6 +81,8 @@ public class ChargingServiceImpl implements ChargingService {
         this.chargingSessionMapper = chargingSessionMapper;
         this.billingRatePeriodMapper = billingRatePeriodMapper;
         this.queueEntryMapper = queueEntryMapper;
+        this.billMapper = billMapper;
+        this.scheduler = scheduler;
         this.timeProvider = timeProvider;
     }
 
@@ -114,28 +131,20 @@ public class ChargingServiceImpl implements ChargingService {
             return Result.error(400, "该车辆已有进行中的订单");
         }
 
-        // 5. 计算预估费用和用时
+        // 5. 创建订单（先设 WAITING，调度后更新预估值）
         PileType pileType = mode == RequestMode.FAST ? PileType.FAST : PileType.SLOW;
-        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
-        BigDecimal rate = lookupRate(pileType);
-        BigDecimal estimatedFee = amount.multiply(rate).setScale(2, RoundingMode.HALF_UP);
-        int estimatedMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(60)).intValue();
-
-        // 6. 创建订单（持久化预估费用和用时）
         ChargingOrder order = new ChargingOrder();
         order.setOrderId(UUID.randomUUID().toString());
         order.setOrderNo("ORD-" + System.currentTimeMillis());
         order.setCarId(carId);
         order.setRequestMode(mode);
         order.setTargetKwh(amount);
-        order.setEstimatedFee(estimatedFee);
-        order.setEstimatedMinutes(estimatedMinutes);
         order.setOrderStatus(OrderStatus.WAITING);
         chargingOrderMapper.insert(order);
 
-        // 7. 调度：有故障时订单进入等候区（故障队列优先分发），否则选最优桩
+        // 6. 调度
         String selectedPileId = null;
+        ChargingPile bestPile = null;
         String waitQueueKey = pileType == PileType.FAST ? "FAST" : "SLOW";
         if (engine.hasAnyFault()) {
             engine.enqueueWait(order);
@@ -148,13 +157,12 @@ public class ChargingServiceImpl implements ChargingService {
             );
             if (!piles.isEmpty()) {
                 piles.sort(Comparator.comparingLong(this::totalActiveMinutes));
-                ChargingPile best = piles.getFirst();
-                if (engine.addToPileQueue(best.getPileId(), order)) {
+                bestPile = piles.getFirst();
+                if (engine.addToPileQueue(bestPile.getPileId(), order)) {
                     order.setOrderStatus(OrderStatus.CALLED);
-                    order.setPileId(best.getPileId());
-                    chargingOrderMapper.updateById(order);
-                    insertQueueEntry("PILE", best.getPileId(), order.getOrderId());
-                    selectedPileId = best.getPileId();
+                    order.setPileId(bestPile.getPileId());
+                    selectedPileId = bestPile.getPileId();
+                    insertQueueEntry("PILE", selectedPileId, order.getOrderId());
                 }
             }
             if (selectedPileId == null) {
@@ -162,6 +170,25 @@ public class ChargingServiceImpl implements ChargingService {
                 insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
             }
         }
+
+        // 7. 调度后计算预估（含等待时间）
+        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
+        int chargeMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(60)).intValue();
+        int estimatedMinutes = selectedPileId != null
+                ? (int) totalActiveMinutes(bestPile) : chargeMinutes;
+        if (estimatedMinutes < chargeMinutes) estimatedMinutes = chargeMinutes;
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+        LocalDateTime estimateEnd = timeProvider.now().plusMinutes(estimatedMinutes);
+        FeeResult feeResult = calculateFees(power, amount, timeProvider.now(), estimateEnd, periods);
+        BigDecimal estimatedFee = feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP);
+
+        order.setEstimatedFee(estimatedFee);
+        order.setEstimatedMinutes(estimatedMinutes);
+        chargingOrderMapper.updateById(order);
 
         // 8. 组装响应
         OrderStatus status = order.getOrderStatus();
@@ -341,6 +368,246 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     @Override
+    public Result<ChargingStateResponse> chargingState(String carId) {
+        // 1. 校验 carId
+        if (!hasText(carId)) {
+            return Result.error(400, "车辆 ID 不能为空");
+        }
+
+        // 2. 查找最近充电会话
+        ChargingSession session = chargingSessionMapper.selectOne(
+                new QueryWrapper<ChargingSession>()
+                        .eq("car_id", carId)
+                        .orderByDesc("created_at")
+                        .last("LIMIT 1")
+        );
+        ChargingStateResponse resp = new ChargingStateResponse();
+        resp.setCarId(carId);
+        if (session == null) {
+            resp.setStatus("none");
+            return Result.success(resp);
+        }
+
+        // 3. 映射状态 + 基础字段
+        String status = switch (session.getSessionStatus()) {
+            case CHARGING -> "charging";
+            case FINISHED -> "completed";
+            case INTERRUPTED -> "interrupted";
+        };
+        resp.setStatus(status);
+        resp.setOrderId(session.getOrderId());
+        resp.setPileNum(session.getPileId());
+        resp.setStartTime(session.getStartTime() != null
+                ? session.getStartTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+                : null);
+
+        // 4. 计算充电量和时长
+        BigDecimal chargedKwh = null;
+        String duration = null;
+
+        if (session.getSessionStatus() == SessionStatus.CHARGING) {
+            ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
+            BigDecimal power = BigDecimal.valueOf(pile != null ? pile.getPowerKw() : 0);
+
+            long elapsedSeconds = Duration.between(session.getStartTime(), timeProvider.now()).getSeconds();
+            if (elapsedSeconds < 0) elapsedSeconds = 0;
+
+            BigDecimal maxCharge = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+            BigDecimal estimatedKwh = power.multiply(BigDecimal.valueOf(elapsedSeconds))
+                    .divide(BigDecimal.valueOf(3600), 10, RoundingMode.HALF_UP);
+            chargedKwh = estimatedKwh.min(maxCharge).setScale(2, RoundingMode.HALF_UP);
+            duration = formatDuration(elapsedSeconds);
+        } else {
+            chargedKwh = session.getChargedKwh();
+            if (session.getStartTime() != null && session.getEndTime() != null) {
+                long seconds = Duration.between(session.getStartTime(), session.getEndTime()).getSeconds();
+                duration = formatDuration(Math.max(0, seconds));
+            }
+        }
+
+        resp.setCurrentAmount(chargedKwh != null ? chargedKwh : BigDecimal.ZERO);
+        resp.setCurrentDuration(duration);
+
+        // 5. 计算费用和电价
+        ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
+        PileType pileType = pile != null ? pile.getPileType() : null;
+        BigDecimal power = pile != null ? BigDecimal.valueOf(pile.getPowerKw()) : BigDecimal.ZERO;
+        BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+
+        LocalDateTime calcStart = session.getStartTime();
+        LocalDateTime calcEnd = session.getSessionStatus() == SessionStatus.CHARGING
+                ? timeProvider.now() : session.getEndTime();
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+
+        if (calcStart != null && calcEnd != null && pileType != null) {
+            FeeResult feeResult = calculateFees(power, target, calcStart, calcEnd, periods);
+            resp.setCurrentAmount(feeResult.totalKwh.setScale(2, RoundingMode.HALF_UP));
+            resp.setCurrentChargeFee(feeResult.chargeFee.setScale(2, RoundingMode.HALF_UP));
+            resp.setCurrentServiceFee(feeResult.serviceFee.setScale(2, RoundingMode.HALF_UP));
+            resp.setTotalCurrentFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+
+            if (session.getSessionStatus() == SessionStatus.CHARGING) {
+                LocalTime nowTime = timeProvider.now().toLocalTime();
+                resp.setCurrentPeriodPrice(currentElectricityPrice(periods, nowTime));
+                resp.setNextPeriodPrice(nextElectricityPrice(periods, nowTime));
+            }
+        }
+
+        return Result.success(resp);
+    }
+
+    @Override
+    public Result<ChargingEndResponse> end(ChargingEndRequest request) {
+        // 1. 校验参数
+        String carId = request.getCarId();
+        String pileId = request.getChargingPileNum();
+        if (!hasText(carId)) {
+            return Result.error(400, "车辆 ID 不能为空");
+        }
+        if (!hasText(pileId)) {
+            return Result.error(400, "充电桩 ID 不能为空");
+        }
+
+        // 2. 查找充电会话
+        ChargingSession session = chargingSessionMapper.selectOne(
+                new QueryWrapper<ChargingSession>()
+                        .eq("car_id", carId)
+                        .eq("pile_id", pileId)
+                        .eq("session_status", SessionStatus.CHARGING)
+                        .orderByDesc("created_at")
+                        .last("LIMIT 1")
+        );
+        if (session == null) {
+            return Result.error(400, "未找到充电中的会话");
+        }
+
+        // 3. 查找订单和桩
+        ChargingOrder order = chargingOrderMapper.selectById(session.getOrderId());
+        if (order == null) {
+            return Result.error(404, "订单不存在");
+        }
+        ChargingPile pile = chargingPileMapper.selectById(pileId);
+        if (pile == null) {
+            return Result.error(404, "充电桩不存在");
+        }
+
+        // 4. 计算费用
+        PileType pileType = pile.getPileType();
+        BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
+        BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+        LocalDateTime endTime = timeProvider.now();
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+
+        FeeResult feeResult = calculateFees(power, target, session.getStartTime(), endTime, periods);
+        long chargeMinutes = Duration.between(session.getStartTime(), endTime).toMinutes();
+
+        // 5. 创建账单
+        Bill bill = new Bill();
+        bill.setBillId(UUID.randomUUID().toString());
+        bill.setBillNo("BILL-" + System.currentTimeMillis());
+        bill.setOrderId(order.getOrderId());
+        bill.setSessionId(session.getSessionId());
+        bill.setCarId(carId);
+        bill.setPileId(pileId);
+        bill.setStartTime(session.getStartTime());
+        bill.setEndTime(endTime);
+        bill.setChargedKwh(feeResult.totalKwh.setScale(2, RoundingMode.HALF_UP));
+        bill.setChargeMinutes((int) chargeMinutes);
+        bill.setElectricityFee(feeResult.chargeFee.setScale(2, RoundingMode.HALF_UP));
+        bill.setServiceFee(feeResult.serviceFee.setScale(2, RoundingMode.HALF_UP));
+        bill.setTotalFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+        bill.setPaymentStatus(PaymentStatus.UNPAID);
+        billMapper.insert(bill);
+
+        // 6. 更新会话
+        session.setSessionStatus(SessionStatus.FINISHED);
+        session.setEndTime(endTime);
+        session.setChargedKwh(feeResult.totalKwh);
+        chargingSessionMapper.updateById(session);
+
+        // 7. 更新订单
+        order.setOrderStatus(OrderStatus.FINISHED);
+        chargingOrderMapper.updateById(order);
+
+        // 8. 更新桩
+        pile.setWorkingState(WorkingState.AVAILABLE);
+        pile.setCurrentSessionId(null);
+        chargingPileMapper.updateById(pile);
+
+        // 9. 删 queue_entry + 引擎释放
+        QueueEntry qe = queueEntryMapper.selectOne(
+                new QueryWrapper<QueueEntry>()
+                        .eq("queue_type", "PILE")
+                        .eq("queue_key", pileId)
+                        .orderByAsc("id")
+                        .last("LIMIT 1")
+        );
+        if (qe != null) {
+            queueEntryMapper.deleteById(qe.getId());
+        }
+        engine.onPileReleased(pileId, pileType);
+        tryFillFromWaiting(pileId, pileType);
+
+        ChargingEndResponse resp = new ChargingEndResponse();
+        resp.setResult(1);
+        return Result.success(resp);
+    }
+
+    @Override
+    public Result<ChargingEndResponse> cancel(ChargingCancelRequest request) {
+        // 1. 校验 carId
+        String carId = request.getCarId();
+        if (!hasText(carId)) {
+            return Result.error(400, "车辆 ID 不能为空");
+        }
+
+        // 2. 查找 WAITING 或 CALLED 订单
+        ChargingOrder order = chargingOrderMapper.selectOne(
+                new QueryWrapper<ChargingOrder>()
+                        .eq("car_id", carId)
+                        .in("order_status", List.of("WAITING", "CALLED"))
+                        .orderByDesc("created_at")
+                        .last("LIMIT 1")
+        );
+        if (order == null) {
+            return Result.error(404, "没有可取消的充电请求");
+        }
+
+        // 3. 从队列移除 + 删 queue_entry
+        String pileId = order.getPileId();
+        String orderId = order.getOrderId();
+
+        if (order.getOrderStatus() == OrderStatus.WAITING) {
+            engine.removeFromWait(carId);
+        } else {
+            engine.removeFromAllPileQueues(carId);
+        }
+        queueEntryMapper.delete(
+                new QueryWrapper<QueueEntry>().eq("order_id", orderId)
+        );
+
+        // 4. 更新订单状态
+        order.setOrderStatus(OrderStatus.CANCELLED);
+        chargingOrderMapper.updateById(order);
+
+        // 5. CALLED 取消后尝试补位
+        if (pileId != null) {
+            ChargingPile pile = chargingPileMapper.selectById(pileId);
+            if (pile != null) tryFillFromWaiting(pileId, pile.getPileType());
+        }
+
+        ChargingEndResponse resp = new ChargingEndResponse();
+        resp.setResult(1);
+        return Result.success(resp);
+    }
+
+    @Override
     public ChargingOrder modifyAmount(String carId, BigDecimal amount) {
         if (!hasText(carId)) {
             throw new BusinessException("carId is required");
@@ -389,31 +656,8 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     /** 查询当前时段的电价 + 服务费（元/kWh）。 */
-    private BigDecimal lookupRate(PileType pileType) {
-        LocalTime now = timeProvider.now().toLocalTime();
-        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
-                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
-        );
-        for (var p : periods) {
-            LocalTime start = LocalTime.parse(p.getStartTime());
-            LocalTime end = LocalTime.parse(p.getEndTime());
-            if (start.compareTo(end) <= 0) {
-                if (!now.isBefore(start) && now.isBefore(end)) {
-                    return p.getElectricityPrice().add(p.getServicePrice());
-                }
-            } else {
-                // 跨天时段（如 22:00 - 06:00）
-                if (!now.isBefore(start) || now.isBefore(end)) {
-                    return p.getElectricityPrice().add(p.getServicePrice());
-                }
-            }
-        }
-        // 兜底费率
-        return new BigDecimal("1.0");
-    }
-
     /** 将 HH:mm 格式转为当天分钟数。 */
-    private int parseMinutes(String time) {
+    private static int parseMinutes(String time) {
         if (time == null || !time.matches("\\d{1,2}:\\d{2}")) {
             throw new BusinessException(400, "时间格式无效，应为 HH:mm");
         }
@@ -467,9 +711,110 @@ public class ChargingServiceImpl implements ChargingService {
         pile.setCurrentSessionId(session.getSessionId());
         chargingSessionMapper.insert(session);
 
+        // 预约充满自动结束
+        BigDecimal powerKw = BigDecimal.valueOf(pile.getPowerKw());
+        long delayMs = order.getTargetKwh()
+                .divide(powerKw, 10, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(3600_000))
+                .longValue();
+        String sid = session.getSessionId();
+        scheduler.schedule(() -> autoFinish(sid), delayMs, TimeUnit.MILLISECONDS);
+
         order.setOrderStatus(OrderStatus.CHARGING);
         chargingOrderMapper.updateById(order);
         engine.setCharging(pile.getPileId(), order);
+    }
+
+    /** 桩释放后尝试从等候区补位：查 queue_entry 找等候区最早车辆，改订单状态并同步。 */
+    private void tryFillFromWaiting(String pileId, PileType pileType) {
+        if (engine.hasAnyFault()) return;
+        if (engine.pileQueueSize(pileId) >= 3) return;
+
+        String waitKey = pileType == PileType.FAST ? "FAST" : "SLOW";
+        QueueEntry qe = queueEntryMapper.selectOne(
+                new QueryWrapper<QueueEntry>()
+                        .eq("queue_type", "WAIT")
+                        .eq("queue_key", waitKey)
+                        .orderByAsc("id")
+                        .last("LIMIT 1")
+        );
+        if (qe == null) return;
+
+        ChargingOrder order = chargingOrderMapper.selectById(qe.getOrderId());
+        if (order == null) return;
+        if (order.getOrderStatus() != OrderStatus.WAITING) {
+            queueEntryMapper.deleteById(qe.getId());
+            return;
+        }
+
+        if (!engine.addToPileQueue(pileId, order)) return;
+
+        order.setOrderStatus(OrderStatus.CALLED);
+        order.setPileId(pileId);
+        chargingOrderMapper.updateById(order);
+
+        queueEntryMapper.deleteById(qe.getId());
+        insertQueueEntry("PILE", pileId, order.getOrderId());
+    }
+
+    private void autoFinish(String sessionId) {
+        ChargingSession session = chargingSessionMapper.selectById(sessionId);
+        if (session == null || session.getSessionStatus() != SessionStatus.CHARGING) return;
+
+        ChargingOrder order = chargingOrderMapper.selectById(session.getOrderId());
+        ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
+        if (order == null || pile == null) return;
+
+        PileType pileType = pile.getPileType();
+        BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
+        BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+        LocalDateTime endTime = timeProvider.now();
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+        FeeResult feeResult = calculateFees(power, target, session.getStartTime(), endTime, periods);
+        long chargeMinutes = Duration.between(session.getStartTime(), endTime).toMinutes();
+
+        Bill bill = new Bill();
+        bill.setBillId(UUID.randomUUID().toString());
+        bill.setBillNo("BILL-" + System.currentTimeMillis());
+        bill.setOrderId(order.getOrderId());
+        bill.setSessionId(session.getSessionId());
+        bill.setCarId(session.getCarId());
+        bill.setPileId(pile.getPileId());
+        bill.setStartTime(session.getStartTime());
+        bill.setEndTime(endTime);
+        bill.setChargedKwh(feeResult.totalKwh.setScale(2, RoundingMode.HALF_UP));
+        bill.setChargeMinutes((int) chargeMinutes);
+        bill.setElectricityFee(feeResult.chargeFee.setScale(2, RoundingMode.HALF_UP));
+        bill.setServiceFee(feeResult.serviceFee.setScale(2, RoundingMode.HALF_UP));
+        bill.setTotalFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+        bill.setPaymentStatus(PaymentStatus.UNPAID);
+        billMapper.insert(bill);
+
+        session.setSessionStatus(SessionStatus.FINISHED);
+        session.setEndTime(endTime);
+        session.setChargedKwh(feeResult.totalKwh);
+        chargingSessionMapper.updateById(session);
+
+        order.setOrderStatus(OrderStatus.FINISHED);
+        chargingOrderMapper.updateById(order);
+
+        pile.setWorkingState(WorkingState.AVAILABLE);
+        pile.setCurrentSessionId(null);
+        chargingPileMapper.updateById(pile);
+
+        QueueEntry qe = queueEntryMapper.selectOne(
+                new QueryWrapper<QueueEntry>()
+                        .eq("queue_type", "PILE")
+                        .eq("queue_key", pile.getPileId())
+                        .orderByAsc("id")
+                        .last("LIMIT 1")
+        );
+        if (qe != null) queueEntryMapper.deleteById(qe.getId());
+        engine.onPileReleased(pile.getPileId(), pileType);
+        tryFillFromWaiting(pile.getPileId(), pileType);
     }
 
     private void insertQueueEntry(String queueType, String queueKey, String orderId) {
@@ -478,5 +823,103 @@ public class ChargingServiceImpl implements ChargingService {
         entry.setQueueKey(queueKey);
         entry.setOrderId(orderId);
         queueEntryMapper.insert(entry);
+    }
+
+    private static FeeResult calculateFees(BigDecimal power, BigDecimal target,
+                                            LocalDateTime start, LocalDateTime end,
+                                            List<BillingRatePeriod> periods) {
+        BigDecimal totalKwh = BigDecimal.ZERO;
+        BigDecimal chargeFee = BigDecimal.ZERO;
+        BigDecimal serviceFee = BigDecimal.ZERO;
+
+        LocalDateTime cursor = start;
+        while (cursor.isBefore(end) && totalKwh.compareTo(target) < 0) {
+            int currentMinute = cursor.getHour() * 60 + cursor.getMinute();
+
+            BillingRatePeriod period = findPeriod(periods, currentMinute);
+            if (period == null) break;
+
+            int ps = parseMinutes(period.getStartTime());
+            int pe = parseMinutes(period.getEndTime());
+
+            LocalDateTime periodEnd;
+            if (ps <= pe) {
+                periodEnd = cursor.toLocalDate().atStartOfDay().plusMinutes(pe);
+            } else {
+                int cm = cursor.getHour() * 60 + cursor.getMinute();
+                if (cm >= ps) {
+                    periodEnd = cursor.toLocalDate().atStartOfDay().plusDays(1).plusMinutes(pe);
+                } else {
+                    periodEnd = cursor.toLocalDate().atStartOfDay().plusMinutes(pe);
+                }
+            }
+
+            LocalDateTime sliceEnd = periodEnd.isBefore(end) ? periodEnd : end;
+            if (sliceEnd.equals(cursor)) break;
+
+            long sliceSeconds = Duration.between(cursor, sliceEnd).getSeconds();
+
+            BigDecimal kwh = power.multiply(BigDecimal.valueOf(sliceSeconds))
+                    .divide(BigDecimal.valueOf(3600), 10, RoundingMode.HALF_UP);
+
+            BigDecimal remaining = target.subtract(totalKwh);
+            if (kwh.compareTo(remaining) > 0) kwh = remaining;
+
+            chargeFee = chargeFee.add(kwh.multiply(period.getElectricityPrice()));
+            serviceFee = serviceFee.add(kwh.multiply(period.getServicePrice()));
+            totalKwh = totalKwh.add(kwh);
+
+            cursor = sliceEnd;
+        }
+
+        return new FeeResult(totalKwh, chargeFee, serviceFee);
+    }
+
+    private static BillingRatePeriod findPeriod(List<BillingRatePeriod> periods, int minuteOfDay) {
+        for (BillingRatePeriod p : periods) {
+            int start = parseMinutes(p.getStartTime());
+            int end = parseMinutes(p.getEndTime());
+            if (start <= end) {
+                if (minuteOfDay >= start && minuteOfDay < end) return p;
+            } else {
+                if (minuteOfDay >= start || minuteOfDay < end) return p;
+            }
+        }
+        return null;
+    }
+
+    private static BigDecimal currentElectricityPrice(List<BillingRatePeriod> periods, LocalTime time) {
+        int m = time.getHour() * 60 + time.getMinute();
+        BillingRatePeriod p = findPeriod(periods, m);
+        return p != null ? p.getElectricityPrice() : BigDecimal.ONE;
+    }
+
+    private static BigDecimal nextElectricityPrice(List<BillingRatePeriod> periods, LocalTime time) {
+        int m = time.getHour() * 60 + time.getMinute();
+        BillingRatePeriod best = null;
+        int bestDist = Integer.MAX_VALUE;
+        for (BillingRatePeriod p : periods) {
+            int start = parseMinutes(p.getStartTime());
+            int dist;
+            if (start > m) {
+                dist = start - m;
+            } else {
+                dist = start + 1440 - m;
+            }
+            if (dist < bestDist) {
+                bestDist = dist;
+                best = p;
+            }
+        }
+        return best != null ? best.getElectricityPrice() : BigDecimal.ONE;
+    }
+
+    private record FeeResult(BigDecimal totalKwh, BigDecimal chargeFee, BigDecimal serviceFee) {}
+
+    private static String formatDuration(long seconds) {
+        long h = seconds / 3600;
+        long m = (seconds % 3600) / 60;
+        long s = seconds % 60;
+        return String.format("%02d:%02d:%02d", h, m, s);
     }
 }

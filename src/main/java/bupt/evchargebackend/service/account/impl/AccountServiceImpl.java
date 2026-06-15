@@ -14,6 +14,7 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -65,11 +66,8 @@ public class AccountServiceImpl implements AccountService {
         carMapper.insert(car);
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("userId", userId);
-        data.put("username", username);
-        data.put("role", userRole.name());
         data.put("carId", finalCarId);
-        data.put("carNo", finalCarNo);
+        data.put("userName", username);
         return data;
     }
 
@@ -88,20 +86,17 @@ public class AccountServiceImpl implements AccountService {
         String role = account.getRole().name();
         String token = jwtUtil.generate(account.getUserId(), role);
 
-        Map<String, Object> data = new LinkedHashMap<>();
+        Map<String, Object> data = buildUserData(account);
         data.put("token", token);
-        data.put("userId", account.getUserId());
-        data.put("username", account.getUsername());
-        data.put("role", role);
         return data;
     }
 
     @Override
-    public Map<String, Object> addVehicle(String userId, String carId, String carNo, BigDecimal batteryCapacityKwh) {
-        requireText(userId, "userId is required");
+    public Map<String, Object> addVehicle(String userId, String username, String carId, String carNo,
+                                          BigDecimal batteryCapacityKwh) {
         requirePositive(batteryCapacityKwh, "batteryCapacityKwh must be greater than 0");
 
-        UserAccount account = userAccountMapper.selectById(userId);
+        UserAccount account = findAccount(userId, username);
         if (account == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
@@ -115,17 +110,23 @@ public class AccountServiceImpl implements AccountService {
 
         Car car = new Car();
         car.setCarId(finalCarId);
-        car.setUserId(userId);
+        car.setUserId(account.getUserId());
         car.setCarNo(finalCarNo);
         car.setBatteryCapacityKwh(batteryCapacityKwh);
         carMapper.insert(car);
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("userId", userId);
         data.put("carId", finalCarId);
-        data.put("carNo", finalCarNo);
-        data.put("batteryCapacityKwh", batteryCapacityKwh);
         return data;
+    }
+
+    @Override
+    public List<Map<String, Object>> listVehicles(String userId, String username) {
+        UserAccount account = findAccount(userId, username);
+        if (account == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        return listVehicleData(account.getUserId());
     }
 
     @Override
@@ -133,13 +134,12 @@ public class AccountServiceImpl implements AccountService {
         requireText(token, "token is required");
         try {
             String userId = jwtUtil.parseUserId(token);
-            String role = jwtUtil.parseRole(token);
+            UserAccount account = userAccountMapper.selectById(userId);
+            if (account == null) {
+                throw new BusinessException(401, "token is invalid or expired");
+            }
 
-            Map<String, Object> data = new LinkedHashMap<>();
-            data.put("valid", true);
-            data.put("userId", userId);
-            data.put("role", role);
-            return data;
+            return buildUserData(account);
         } catch (Exception e) {
             throw new BusinessException(401, "token is invalid or expired");
         }
@@ -170,5 +170,39 @@ public class AccountServiceImpl implements AccountService {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private Map<String, Object> buildUserData(UserAccount account) {
+        Map<String, Object> data = new LinkedHashMap<>();
+        data.put("userName", account.getUsername());
+        data.put("vehicles", listVehicleData(account.getUserId()));
+        return data;
+    }
+
+    private UserAccount findAccount(String userId, String username) {
+        if (hasText(userId)) {
+            return userAccountMapper.selectById(userId);
+        }
+        if (hasText(username)) {
+            return userAccountMapper.selectOne(
+                    new QueryWrapper<UserAccount>().eq("username", username).last("LIMIT 1")
+            );
+        }
+        throw new BusinessException("userId or userName is required");
+    }
+
+    private List<Map<String, Object>> listVehicleData(String userId) {
+        return carMapper.selectList(new QueryWrapper<Car>().eq("user_id", userId))
+                .stream()
+                .map(this::buildVehicleData)
+                .toList();
+    }
+
+    private Map<String, Object> buildVehicleData(Car car) {
+        Map<String, Object> vehicle = new LinkedHashMap<>();
+        vehicle.put("carId", car.getCarId());
+        vehicle.put("carNo", car.getCarNo());
+        vehicle.put("carCapacity", car.getBatteryCapacityKwh());
+        return vehicle;
     }
 }

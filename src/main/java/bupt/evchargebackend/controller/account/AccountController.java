@@ -7,10 +7,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.math.BigDecimal;
+import java.util.List;
 import java.util.Map;
 
 @RestController
@@ -46,10 +47,19 @@ public class AccountController {
     public Result<Map<String, Object>> addVehicle(@RequestBody Map<String, Object> request) {
         return Result.success(accountService.addVehicle(
                 pickString(request, "userId", "user_Id", "user_id"),
+                pickString(request, "username", "userName"),
                 pickString(request, "carId", "car_Id", "car_id"),
                 pickString(request, "carNo", "car_No", "car_no"),
                 pickBigDecimal(request, "batteryCapacityKwh", "carCapacity", "car_Capacity", "car_capacity")
         ));
+    }
+
+    @GetMapping("/api/v1/account/vehicles")
+    public Result<List<Map<String, Object>>> listVehicles(
+            @RequestParam(value = "userId", required = false) String userId,
+            @RequestParam(value = "userName", required = false) String userName,
+            @RequestParam(value = "username", required = false) String username) {
+        return Result.success(accountService.listVehicles(userId, hasText(userName) ? userName : username));
     }
 
     @GetMapping("/api/v1/auth/verify")
@@ -87,5 +97,9 @@ public class AccountController {
         } catch (NumberFormatException e) {
             throw new BusinessException("number field is invalid");
         }
+    }
+
+    private boolean hasText(String value) {
+        return value != null && !value.isBlank();
     }
 }

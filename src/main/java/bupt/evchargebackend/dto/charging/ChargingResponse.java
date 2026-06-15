@@ -25,4 +25,51 @@ public class ChargingResponse {
     private BigDecimal estimatedFee;
     /** 预估用时（分钟） */
     private Integer estimatedMinutes;
+    public String getCarPosition() {
+        return carPosition;
+    }
+
+    public void setCarPosition(String carPosition) {
+        this.carPosition = carPosition;
+    }
+
+    public String getCarState() {
+        return carState;
+    }
+
+    public void setCarState(String carState) {
+        this.carState = carState;
+    }
+
+    public Integer getQueueNum() {
+        return queueNum;
+    }
+
+    public void setQueueNum(Integer queueNum) {
+        this.queueNum = queueNum;
+    }
+
+    public String getRequestTime() {
+        return requestTime;
+    }
+
+    public void setRequestTime(String requestTime) {
+        this.requestTime = requestTime;
+    }
+
+    public BigDecimal getEstimatedFee() {
+        return estimatedFee;
+    }
+
+    public void setEstimatedFee(BigDecimal estimatedFee) {
+        this.estimatedFee = estimatedFee;
+    }
+
+    public Integer getEstimatedMinutes() {
+        return estimatedMinutes;
+    }
+
+    public void setEstimatedMinutes(Integer estimatedMinutes) {
+        this.estimatedMinutes = estimatedMinutes;
+    }
 }

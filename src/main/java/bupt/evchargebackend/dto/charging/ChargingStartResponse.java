@@ -13,4 +13,11 @@ public class ChargingStartResponse {
 
     /** 操作结果：1=成功，0=失败 */
     private Integer result;
+    public Integer getResult() {
+        return result;
+    }
+
+    public void setResult(Integer result) {
+        this.result = result;
+    }
 }

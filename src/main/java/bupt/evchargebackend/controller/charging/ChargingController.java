@@ -6,6 +6,10 @@ import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.dto.charging.ChargingStartResponse;
+import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndResponse;
+import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
@@ -56,10 +60,42 @@ public class ChargingController {
 
     /**
      * 查看车辆队列状态：查询车辆在等候区或充电区的排队位置。
+     *
+     * @param carId 车辆 ID
      */
     @GetMapping("/queue-position")
     public Result<QueueStatusResponse> queuePosition(@RequestParam String carId) {
         return chargingService.queueStatus(carId);
+    }
+
+    /**
+     * 查看充电状态：查询车辆当前充电进度、费用和时段电价。
+     *
+     * @param carId 车辆 ID
+     */
+    @GetMapping("/state")
+    public Result<ChargingStateResponse> state(@RequestParam String carId) {
+        return chargingService.chargingState(carId);
+    }
+
+    /**
+     * 结束充电：用户主动结束或系统自动充满后结束，创建账单并释放充电桩。
+     *
+     * @param request {carId, chargingPileNum}
+     */
+    @PostMapping("/end")
+    public Result<ChargingEndResponse> end(@Valid @RequestBody ChargingEndRequest request) {
+        return chargingService.end(request);
+    }
+
+    /**
+     * 取消充电申请：用户在等候区或桩队列中取消已提交的申请。
+     *
+     * @param request {carId}
+     */
+    @PostMapping("/cancel")
+    public Result<ChargingEndResponse> cancel(@Valid @RequestBody ChargingCancelRequest request) {
+        return chargingService.cancel(request);
     }
 
     @PostMapping("/modify-amount")

@@ -110,6 +110,14 @@ public class ChargingOrder {
         this.estimatedMinutes = estimatedMinutes;
     }
 
+    public String getPileId() {
+        return pileId;
+    }
+
+    public void setPileId(String pileId) {
+        this.pileId = pileId;
+    }
+
     public OrderStatus getOrderStatus() {
         return orderStatus;
     }

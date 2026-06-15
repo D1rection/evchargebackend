@@ -47,4 +47,75 @@ public class BillingRatePeriod {
     /** 更新时间 */
     @TableField(fill = FieldFill.INSERT_UPDATE)
     private LocalDateTime updatedAt;
+    public String getPeriodId() {
+        return periodId;
+    }
+
+    public void setPeriodId(String periodId) {
+        this.periodId = periodId;
+    }
+
+    public PileType getPileType() {
+        return pileType;
+    }
+
+    public void setPileType(PileType pileType) {
+        this.pileType = pileType;
+    }
+
+    public PeriodName getPeriodName() {
+        return periodName;
+    }
+
+    public void setPeriodName(PeriodName periodName) {
+        this.periodName = periodName;
+    }
+
+    public String getStartTime() {
+        return startTime;
+    }
+
+    public void setStartTime(String startTime) {
+        this.startTime = startTime;
+    }
+
+    public String getEndTime() {
+        return endTime;
+    }
+
+    public void setEndTime(String endTime) {
+        this.endTime = endTime;
+    }
+
+    public BigDecimal getElectricityPrice() {
+        return electricityPrice;
+    }
+
+    public void setElectricityPrice(BigDecimal electricityPrice) {
+        this.electricityPrice = electricityPrice;
+    }
+
+    public BigDecimal getServicePrice() {
+        return servicePrice;
+    }
+
+    public void setServicePrice(BigDecimal servicePrice) {
+        this.servicePrice = servicePrice;
+    }
+
+    public LocalDateTime getCreatedAt() {
+        return createdAt;
+    }
+
+    public void setCreatedAt(LocalDateTime createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public LocalDateTime getUpdatedAt() {
+        return updatedAt;
+    }
+
+    public void setUpdatedAt(LocalDateTime updatedAt) {
+        this.updatedAt = updatedAt;
+    }
 }

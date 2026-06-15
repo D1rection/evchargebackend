@@ -421,13 +421,13 @@ public class ChargingServiceImpl implements ChargingService {
             FeeResult feeResult = calculateFees(power, target, calcStart, calcEnd, periods);
             resp.setCurrentAmount(feeResult.totalKwh.setScale(2, RoundingMode.HALF_UP));
             resp.setCurrentChargeFee(feeResult.chargeFee.setScale(2, RoundingMode.HALF_UP));
-            resp.setCurrentServiceFee(feeResult.serviceFee.setScale(2, RoundingMode.HALF_UP));
-            resp.setTotalCurrentFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+            resp.setCurrentServiceFee(BigDecimal.valueOf(5));
+            resp.setTotalCurrentFee(feeResult.chargeFee.add(BigDecimal.valueOf(5)).setScale(2, RoundingMode.HALF_UP));
 
             if (session.getSessionStatus() == SessionStatus.CHARGING) {
                 LocalTime nowTime = timeProvider.now().toLocalTime();
-                resp.setCurrentPeriodPrice(periodPriceAt(periods, nowTime));
-                resp.setNextPeriodPrice(nextPeriodPrice(periods, nowTime));
+                resp.setCurrentPeriodPrice(currentElectricityPrice(periods, nowTime));
+                resp.setNextPeriodPrice(nextElectricityPrice(periods, nowTime));
             }
         }
 
@@ -637,13 +637,13 @@ public class ChargingServiceImpl implements ChargingService {
         return null;
     }
 
-    private static BigDecimal periodPriceAt(List<BillingRatePeriod> periods, LocalTime time) {
+    private static BigDecimal currentElectricityPrice(List<BillingRatePeriod> periods, LocalTime time) {
         int m = time.getHour() * 60 + time.getMinute();
         BillingRatePeriod p = findPeriod(periods, m);
-        return p != null ? p.getElectricityPrice().add(p.getServicePrice()) : BigDecimal.ONE;
+        return p != null ? p.getElectricityPrice() : BigDecimal.ONE;
     }
 
-    private static BigDecimal nextPeriodPrice(List<BillingRatePeriod> periods, LocalTime time) {
+    private static BigDecimal nextElectricityPrice(List<BillingRatePeriod> periods, LocalTime time) {
         int m = time.getHour() * 60 + time.getMinute();
         BillingRatePeriod best = null;
         int bestDist = Integer.MAX_VALUE;
@@ -660,7 +660,7 @@ public class ChargingServiceImpl implements ChargingService {
                 best = p;
             }
         }
-        return best != null ? best.getElectricityPrice().add(best.getServicePrice()) : BigDecimal.ONE;
+        return best != null ? best.getElectricityPrice() : BigDecimal.ONE;
     }
 
     private record FeeResult(BigDecimal totalKwh, BigDecimal chargeFee, BigDecimal serviceFee) {}

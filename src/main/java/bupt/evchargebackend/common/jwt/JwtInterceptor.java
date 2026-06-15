@@ -20,6 +20,11 @@ public class JwtInterceptor implements HandlerInterceptor {
         this.jwtUtil = jwtUtil;
     }
 
+    /**
+     * 校验请求头中的 Bearer 令牌，解析后将 userId 和 role 存入 request 属性。
+     * <p>
+     * 令牌缺失或无效时抛出 401 BusinessException。
+     */
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String auth = request.getHeader("Authorization");

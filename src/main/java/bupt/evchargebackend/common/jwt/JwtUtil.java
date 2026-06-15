@@ -20,10 +20,20 @@ public class JwtUtil {
 
     private final SecretKey key;
 
+    /**
+     * 从配置读取密钥并构造 HMAC-SHA 签名密钥。
+     */
     public JwtUtil(@Value("${jwt.secret}") String secret) {
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
     }
 
+    /**
+     * 生成 JWT 令牌，有效期 24 小时。
+     *
+     * @param userId 用户 ID（存入 subject）
+     * @param role   用户角色（存入 claim "role"）
+     * @return 签名后的 JWT 字符串
+     */
     public String generate(String userId, String role) {
         long now = System.currentTimeMillis();
         return Jwts.builder()
@@ -35,6 +45,12 @@ public class JwtUtil {
                 .compact();
     }
 
+    /**
+     * 解析令牌中的用户 ID（subject）。
+     *
+     * @param token JWT 字符串
+     * @return 用户 ID
+     */
     public String parseUserId(String token) {
         return Jwts.parser()
                 .verifyWith(key)
@@ -44,6 +60,12 @@ public class JwtUtil {
                 .getSubject();
     }
 
+    /**
+     * 解析令牌中的用户角色。
+     *
+     * @param token JWT 字符串
+     * @return 角色名（USER / ADMIN）
+     */
     public String parseRole(String token) {
         return Jwts.parser()
                 .verifyWith(key)

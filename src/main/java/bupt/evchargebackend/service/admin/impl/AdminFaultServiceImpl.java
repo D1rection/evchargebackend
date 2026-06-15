@@ -1,8 +1,7 @@
 package bupt.evchargebackend.service.admin.impl;
 
-import bupt.evchargebackend.common.exception.BusinessException;
-import bupt.evchargebackend.common.exception.ErrorCode;
 import bupt.evchargebackend.common.response.PageResult;
+import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminFaultService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -11,8 +10,6 @@ import java.util.*;
 
 /**
  * 管理员故障运维服务实现。
- * <p>
- * 使用 {@link JdbcTemplate} 直接操作数据库，与其他 monitor 服务风格保持一致。
  *
  * @author Deng Chao
  * @since 2026-06-15
@@ -26,18 +23,8 @@ public class AdminFaultServiceImpl implements AdminFaultService {
         this.jdbcTemplate = jdbcTemplate;
     }
 
-    /**
-     * 分页查询故障记录列表，支持按状态筛选。
-     * <p>
-     * 使用手写 SQL 进行分页，按故障时间倒序排列。
-     *
-     * @param pageNum  页码（从 1 开始）
-     * @param pageSize 每页条数
-     * @param status   故障状态筛选（1={@code ACTIVE}，2={@code RECOVERED}），{@code null} 表示全部
-     * @return 分页包装的故障记录列表，每项含 id、pileId、faultCode、faultTime、status 等字段
-     */
     @Override
-    public PageResult<Map<String, Object>> listFaults(int pageNum, int pageSize, Integer status) {
+    public Result<PageResult<Map<String, Object>>> listFaults(int pageNum, int pageSize, Integer status) {
         StringBuilder whereSql = new StringBuilder();
         List<Object> params = new ArrayList<>();
 
@@ -46,11 +33,9 @@ public class AdminFaultServiceImpl implements AdminFaultService {
             params.add(status == 1 ? "ACTIVE" : "RECOVERED");
         }
 
-        // 总数查询
         String countSql = "SELECT COUNT(*) FROM fault_record" + whereSql;
         Long total = jdbcTemplate.queryForObject(countSql, Long.class, params.toArray());
 
-        // 分页查询
         int offset = (pageNum - 1) * pageSize;
         String pageSql = "SELECT fault_id, pile_id, fault_code, fault_time, fault_status, " +
                          "resolve_code, recover_time, resolver, remark " +
@@ -67,8 +52,8 @@ public class AdminFaultServiceImpl implements AdminFaultService {
             item.put("pileId", row.get("pile_id"));
             item.put("faultCode", row.get("fault_code"));
             item.put("faultTime", row.get("fault_time") != null ? row.get("fault_time").toString() : null);
-            String faultStatus = (String) row.get("fault_status");
-            item.put("status", "ACTIVE".equals(faultStatus) ? 1 : 2);
+            String fs = (String) row.get("fault_status");
+            item.put("status", "ACTIVE".equals(fs) ? 1 : 2);
             item.put("resolveCode", row.get("resolve_code"));
             item.put("resolveTime", row.get("recover_time") != null ? row.get("recover_time").toString() : "");
             item.put("resolver", row.get("resolver") != null ? row.get("resolver").toString() : "");
@@ -76,34 +61,24 @@ public class AdminFaultServiceImpl implements AdminFaultService {
             list.add(item);
         }
 
-        return PageResult.of(list, total != null ? total : 0, pageNum, pageSize);
+        return Result.success(PageResult.of(list, total != null ? total : 0, pageNum, pageSize));
     }
 
-    /**
-     * 标记故障为已处置。
-     * <p>
-     * 校验故障存在性和状态后，更新 {@code fault_status} 为 {@code RECOVERED}，
-     * 并记录处置码、备注和恢复时间。
-     *
-     * @param faultId     故障记录 ID
-     * @param resolveCode 处置码（200=复位，201=换硬件，202=换通信，203=重启，204=其他）
-     * @param remark      处置备注
-     * @throws BusinessException 故障不存在（{@link ErrorCode#RESOURCE_NOT_FOUND}）或已处置（{@link ErrorCode#FAULT_ALREADY_RESOLVED}）时抛出
-     */
     @Override
-    public void resolveFault(String faultId, Integer resolveCode, String remark) {
-        String selectSql = "SELECT fault_status FROM fault_record WHERE fault_id = ?";
-        List<String> results = jdbcTemplate.queryForList(selectSql, String.class, faultId);
+    public Result<Void> resolveFault(String faultId, Integer resolveCode, String remark) {
+        List<String> results = jdbcTemplate.queryForList(
+                "SELECT fault_status FROM fault_record WHERE fault_id = ?", String.class, faultId);
         if (results.isEmpty()) {
-            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND.getCode(), "故障记录不存在");
+            return Result.error(404, "故障记录不存在");
         }
         if ("RECOVERED".equals(results.get(0))) {
-            throw new BusinessException(ErrorCode.FAULT_ALREADY_RESOLVED);
+            return Result.error(409, "故障已处置");
         }
 
-        String updateSql = "UPDATE fault_record SET fault_status = 'RECOVERED', " +
-                           "resolve_code = ?, remark = ?, recover_time = NOW() " +
-                           "WHERE fault_id = ?";
-        jdbcTemplate.update(updateSql, resolveCode, remark, faultId);
+        jdbcTemplate.update(
+                "UPDATE fault_record SET fault_status = 'RECOVERED', " +
+                "resolve_code = ?, remark = ?, recover_time = NOW() WHERE fault_id = ?",
+                resolveCode, remark, faultId);
+        return Result.success();
     }
 }

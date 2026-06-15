@@ -1,6 +1,7 @@
 package bupt.evchargebackend.service.admin;
 
 import bupt.evchargebackend.common.response.PageResult;
+import bupt.evchargebackend.common.response.Result;
 
 import java.util.Map;
 
@@ -20,15 +21,15 @@ public interface AdminFaultService {
      * @param status   故障状态筛选（1=待处置，2=已处置），{@code null} 表示全部
      * @return 分页包装的故障记录列表
      */
-    PageResult<Map<String, Object>> listFaults(int pageNum, int pageSize, Integer status);
+    Result<PageResult<Map<String, Object>>> listFaults(int pageNum, int pageSize, Integer status);
 
     /**
      * 标记故障为已处置。
      *
      * @param faultId     故障记录 ID
-     * @param resolveCode 处置码（200=复位，201=换硬件，202=换通信，203=重启，204=其他）
+     * @param resolveCode 处置码
      * @param remark      处置备注
-     * @throws bupt.evchargebackend.common.exception.BusinessException 故障不存在或已处置时抛出
+     * @return 成功时 {@code code=200}；不存在时 {@code code=404}；已处置时 {@code code=409}
      */
-    void resolveFault(String faultId, Integer resolveCode, String remark);
+    Result<Void> resolveFault(String faultId, Integer resolveCode, String remark);
 }

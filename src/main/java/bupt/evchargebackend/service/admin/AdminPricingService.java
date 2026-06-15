@@ -1,5 +1,7 @@
 package bupt.evchargebackend.service.admin;
 
+import bupt.evchargebackend.common.response.Result;
+
 import java.util.Map;
 
 /**
@@ -12,10 +14,8 @@ public interface AdminPricingService {
 
     /**
      * 获取当前全局计费规则。
-     * <p>
-     * 返回峰/平/谷各时段电价、起止时间和服务费单价。
      *
      * @return 计费规则数据 Map
      */
-    Map<String, Object> getPricing();
+    Result<Map<String, Object>> getPricing();
 }

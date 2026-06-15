@@ -23,17 +23,13 @@ public class AdminAccountController {
         this.adminAccountService = adminAccountService;
     }
 
-    /** 管理员注册 */
     @PostMapping("/create")
     public Result<Map<String, Object>> create(@RequestBody AdminAccountRequest request) {
-        return Result.success(adminAccountService.register(
-                request.getUserName(), request.getPassword()));
+        return adminAccountService.register(request.getUserName(), request.getPassword());
     }
 
-    /** 管理员登录 */
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody AdminAccountRequest request) {
-        return Result.success(adminAccountService.login(
-                request.getUserName(), request.getPassword()));
+        return adminAccountService.login(request.getUserName(), request.getPassword());
     }
 }

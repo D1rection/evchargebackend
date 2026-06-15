@@ -25,7 +25,6 @@ public class AdminReportController {
         this.adminReportService = adminReportService;
     }
 
-    /** 生成运营统计数据 */
     @GetMapping("/reports")
     public Result<Map<String, Object>> generateReport(
             @RequestParam String targetType,
@@ -33,11 +32,9 @@ public class AdminReportController {
             @RequestParam String timeRange,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
-        return Result.success(adminReportService.generateReport(
-                targetType, pileId, timeRange, startDate, endDate));
+        return adminReportService.generateReport(targetType, pileId, timeRange, startDate, endDate);
     }
 
-    /** 导出报表文件 */
     @GetMapping("/reports/export")
     public ResponseEntity<byte[]> exportReport(
             @RequestParam String targetType,

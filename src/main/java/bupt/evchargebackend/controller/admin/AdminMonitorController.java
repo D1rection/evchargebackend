@@ -23,17 +23,15 @@ public class AdminMonitorController {
         this.adminMonitorService = adminMonitorService;
     }
 
-    /** 获取充电桩状态列表 */
     @GetMapping("/piles")
     public Result<PageResult<Map<String, Object>>> listPiles(
             @RequestParam(required = false) Integer pageNum,
             @RequestParam(required = false) Integer pageSize) {
-        return Result.success(adminMonitorService.listPileStatus(pageNum, pageSize));
+        return adminMonitorService.listPileStatus(pageNum, pageSize);
     }
 
-    /** 获取仪表盘数据 */
     @GetMapping("/dashboard")
     public Result<Map<String, Object>> dashboard() {
-        return Result.success(adminMonitorService.getDashboard());
+        return adminMonitorService.getDashboard();
     }
 }

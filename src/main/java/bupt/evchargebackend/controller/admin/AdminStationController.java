@@ -25,43 +25,34 @@ public class AdminStationController {
         this.adminStationService = adminStationService;
     }
 
-    /** 获取场站全局参数 */
     @GetMapping("/station-config")
     public Result<Map<String, Object>> getStationConfig() {
-        return Result.success(adminStationService.getStationConfig());
+        return adminStationService.getStationConfig();
     }
 
-    /** 更新场站全局参数 */
     @PostMapping("/station-config")
     public Result<Void> updateStationConfig(@RequestBody StationConfigRequest request) {
-        adminStationService.updateStationConfig(request);
-        return Result.success();
+        return adminStationService.updateStationConfig(request);
     }
 
-    /** 获取充电桩台账 */
     @GetMapping("/devices")
     public Result<List<Map<String, Object>>> listDevices() {
-        return Result.success(adminStationService.listDevices());
+        return adminStationService.listDevices();
     }
 
-    /** 新增充电桩 */
     @PostMapping("/devices")
     public Result<Map<String, Object>> addDevice(@RequestBody PileRequest request) {
-        return Result.success(adminStationService.addDevice(request));
+        return adminStationService.addDevice(request);
     }
 
-    /** 编辑充电桩 */
     @PostMapping("/devices/update/{pileId}")
     public Result<Void> updateDevice(@PathVariable String pileId,
                                      @RequestBody PileRequest request) {
-        adminStationService.updateDevice(pileId, request);
-        return Result.success();
+        return adminStationService.updateDevice(pileId, request);
     }
 
-    /** 删除充电桩 */
     @PostMapping("/devices/delete/{pileId}")
     public Result<Void> deleteDevice(@PathVariable String pileId) {
-        adminStationService.deleteDevice(pileId);
-        return Result.success();
+        return adminStationService.deleteDevice(pileId);
     }
 }

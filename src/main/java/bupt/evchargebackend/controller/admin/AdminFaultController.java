@@ -24,20 +24,17 @@ public class AdminFaultController {
         this.adminFaultService = adminFaultService;
     }
 
-    /** 获取故障记录列表 */
     @GetMapping("/faults")
     public Result<PageResult<Map<String, Object>>> listFaults(
             @RequestParam int pageNum,
             @RequestParam int pageSize,
             @RequestParam(required = false) Integer status) {
-        return Result.success(adminFaultService.listFaults(pageNum, pageSize, status));
+        return adminFaultService.listFaults(pageNum, pageSize, status);
     }
 
-    /** 标记故障为已处置 */
     @PostMapping("/faults/{faultId}")
     public Result<Void> resolveFault(@PathVariable String faultId,
                                      @RequestBody FaultResolveRequest request) {
-        adminFaultService.resolveFault(faultId, request.getResolveCode(), request.getRemark());
-        return Result.success();
+        return adminFaultService.resolveFault(faultId, request.getResolveCode(), request.getRemark());
     }
 }

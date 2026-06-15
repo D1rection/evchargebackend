@@ -22,9 +22,8 @@ public class AdminPricingController {
         this.adminPricingService = adminPricingService;
     }
 
-    /** 获取当前全局计费规则 */
     @GetMapping("/pricing")
     public Result<Map<String, Object>> getPricing() {
-        return Result.success(adminPricingService.getPricing());
+        return adminPricingService.getPricing();
     }
 }

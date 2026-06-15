@@ -1,5 +1,7 @@
 package bupt.evchargebackend.service.admin;
 
+import bupt.evchargebackend.common.response.Result;
+
 import java.util.Map;
 
 /**
@@ -15,16 +17,16 @@ public interface AdminAccountService {
      *
      * @param userName 用户名
      * @param password 密码（明文）
-     * @return {userId, userName, role}
+     * @return 成功时 {@code {userId, userName, role}}；用户名已存在时 {@code code=409}
      */
-    Map<String, Object> register(String userName, String password);
+    Result<Map<String, Object>> register(String userName, String password);
 
     /**
      * 管理员登录。
      *
      * @param userName 用户名
      * @param password 密码（明文）
-     * @return {userName, token}
+     * @return 成功时 {@code {userName, token}}；认证失败时 {@code code=401}
      */
-    Map<String, Object> login(String userName, String password);
+    Result<Map<String, Object>> login(String userName, String password);
 }

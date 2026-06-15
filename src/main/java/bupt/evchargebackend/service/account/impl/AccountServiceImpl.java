@@ -65,9 +65,8 @@ public class AccountServiceImpl implements AccountService {
         car.setBatteryCapacityKwh(batteryCapacityKwh);
         carMapper.insert(car);
 
-        Map<String, Object> data = new LinkedHashMap<>();
+        Map<String, Object> data = buildUserData(account);
         data.put("userId", userId);
-        data.put("username", username);
         data.put("role", userRole.name());
         data.put("carId", finalCarId);
         data.put("carNo", finalCarNo);
@@ -95,11 +94,11 @@ public class AccountServiceImpl implements AccountService {
     }
 
     @Override
-    public Map<String, Object> addVehicle(String userId, String carId, String carNo, BigDecimal batteryCapacityKwh) {
-        requireText(userId, "userId is required");
+    public Map<String, Object> addVehicle(String userId, String username, String carId, String carNo,
+                                          BigDecimal batteryCapacityKwh) {
         requirePositive(batteryCapacityKwh, "batteryCapacityKwh must be greater than 0");
 
-        UserAccount account = userAccountMapper.selectById(userId);
+        UserAccount account = findAccount(userId, username);
         if (account == null) {
             throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
         }
@@ -113,17 +112,25 @@ public class AccountServiceImpl implements AccountService {
 
         Car car = new Car();
         car.setCarId(finalCarId);
-        car.setUserId(userId);
+        car.setUserId(account.getUserId());
         car.setCarNo(finalCarNo);
         car.setBatteryCapacityKwh(batteryCapacityKwh);
         carMapper.insert(car);
 
         Map<String, Object> data = new LinkedHashMap<>();
-        data.put("userId", userId);
         data.put("carId", finalCarId);
         data.put("carNo", finalCarNo);
-        data.put("batteryCapacityKwh", batteryCapacityKwh);
+        data.put("carCapacity", batteryCapacityKwh);
         return data;
+    }
+
+    @Override
+    public List<Map<String, Object>> listVehicles(String userId, String username) {
+        UserAccount account = findAccount(userId, username);
+        if (account == null) {
+            throw new BusinessException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        return listVehicleData(account.getUserId());
     }
 
     @Override
@@ -174,6 +181,18 @@ public class AccountServiceImpl implements AccountService {
         data.put("userName", account.getUsername());
         data.put("vehicles", listVehicleData(account.getUserId()));
         return data;
+    }
+
+    private UserAccount findAccount(String userId, String username) {
+        if (hasText(userId)) {
+            return userAccountMapper.selectById(userId);
+        }
+        if (hasText(username)) {
+            return userAccountMapper.selectOne(
+                    new QueryWrapper<UserAccount>().eq("username", username).last("LIMIT 1")
+            );
+        }
+        throw new BusinessException("userId or userName is required");
     }
 
     private List<Map<String, Object>> listVehicleData(String userId) {

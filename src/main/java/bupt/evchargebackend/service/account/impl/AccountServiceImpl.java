@@ -91,7 +91,6 @@ public class AccountServiceImpl implements AccountService {
 
         Map<String, Object> data = buildUserData(account);
         data.put("token", token);
-        data.put("role", role);
         return data;
     }
 
@@ -132,16 +131,12 @@ public class AccountServiceImpl implements AccountService {
         requireText(token, "token is required");
         try {
             String userId = jwtUtil.parseUserId(token);
-            String role = jwtUtil.parseRole(token);
             UserAccount account = userAccountMapper.selectById(userId);
             if (account == null) {
                 throw new BusinessException(401, "token is invalid or expired");
             }
 
-            Map<String, Object> data = buildUserData(account);
-            data.put("valid", true);
-            data.put("role", role);
-            return data;
+            return buildUserData(account);
         } catch (Exception e) {
             throw new BusinessException(401, "token is invalid or expired");
         }
@@ -178,7 +173,6 @@ public class AccountServiceImpl implements AccountService {
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("userName", account.getUsername());
         data.put("vehicles", listVehicleData(account.getUserId()));
-        data.put("userId", account.getUserId());
         return data;
     }
 

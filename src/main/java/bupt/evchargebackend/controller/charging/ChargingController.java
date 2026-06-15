@@ -44,13 +44,13 @@ public class ChargingController {
     }
 
     /**
-     * 查询指定时间对应的分时电价。
+     * 查询指定时间对应的分时电价，按 FAST/SLOW 分组。
      *
      * @param time 时间（HH:mm），如 "14:30"
-     * @return 匹配的时段及电价
+     * @return 按类型分组的时段电价
      */
     @GetMapping("/periods")
-    public Result<List<Map<String, Object>>> getPeriods(@RequestParam String time) {
+    public Result<Map<String, Object>> getPeriods(@RequestParam String time) {
         return chargingService.getPeriodByTime(time);
     }
 

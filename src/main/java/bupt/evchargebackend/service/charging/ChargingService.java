@@ -26,12 +26,12 @@ public interface ChargingService {
     Result<ChargingStartResponse> start(ChargingStartRequest request);
 
     /**
-     * 查询指定时间对应的分时电价。
+     * 查询指定时间对应的分时电价，按充电桩类型分组。
      *
      * @param time 时间（HH:mm）
-     * @return 匹配的时段列表（通常为 1 条）
+     * @return 按 FAST/SLOW 分组的时段电价
      */
-    Result<List<Map<String, Object>>> getPeriodByTime(String time);
+    Result<Map<String, Object>> getPeriodByTime(String time);
 
     /**
      * 查看车辆队列状态：查询车辆在等候区或充电区的排队位置。

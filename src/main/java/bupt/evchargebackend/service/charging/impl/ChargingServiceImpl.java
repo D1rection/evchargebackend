@@ -242,11 +242,12 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     @Override
-    public Result<List<Map<String, Object>>> getPeriodByTime(String time) {
+    public Result<Map<String, Object>> getPeriodByTime(String time) {
         int minutes = parseMinutes(time);
 
         List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(null);
-        List<Map<String, Object>> result = new java.util.ArrayList<>();
+        Map<String, Object> result = new LinkedHashMap<>();
+
         for (BillingRatePeriod p : periods) {
             int start = parseMinutes(p.getStartTime());
             int end = parseMinutes(p.getEndTime());
@@ -263,9 +264,10 @@ public class ChargingServiceImpl implements ChargingService {
                 item.put("endTime", p.getEndTime());
                 item.put("electricityPrice", p.getElectricityPrice().doubleValue());
                 item.put("servicePrice", p.getServicePrice().doubleValue());
-                result.add(item);
+                result.put(p.getPileType().name(), item);
             }
         }
+
         if (result.isEmpty()) {
             throw new BusinessException(400, "未找到匹配的计费时段");
         }

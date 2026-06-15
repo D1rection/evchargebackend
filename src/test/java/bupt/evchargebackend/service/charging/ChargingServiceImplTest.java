@@ -7,6 +7,7 @@ import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
 import bupt.evchargebackend.entity.charging.enums.OrderStatus;
+import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
 import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.entity.pile.ChargingPile;
@@ -379,6 +380,131 @@ class ChargingServiceImplTest {
         assertEquals(Integer.valueOf(1), result.getData().getResult());
     }
 
+    // ========== 查看队列状态 ==========
+
+    @Test
+    void queueStatusShouldReturn400_whenCarIdIsEmpty() {
+        assertEquals(400, service.queueStatus("").getCode());
+    }
+
+    @Test
+    void queueStatusShouldReturn404_whenNoOrder() {
+        doReturn(null).when(chargingOrderMapper).selectOne(any());
+        assertEquals(404, service.queueStatus(CAR_ID).getCode());
+    }
+
+    @Test
+    void queueStatusShouldReturnWaiting_whenPosition0() {
+        ChargingOrder order = createOrder(OrderStatus.WAITING);
+        order.setRequestMode(RequestMode.FAST);
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(0).when(engine).waitPosition(PileType.FAST, order.getOrderId());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals(200, result.getCode());
+        assertEquals("waiting", result.getData().getCarState());
+        assertEquals(Integer.valueOf(1), result.getData().getQueueNum());
+        assertEquals(Integer.valueOf(0), result.getData().getCarNumberBeforePosition());
+    }
+
+    @Test
+    void queueStatusShouldReturnWaiting_whenPosition2() {
+        ChargingOrder order = createOrder(OrderStatus.WAITING);
+        order.setRequestMode(RequestMode.FAST);
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(2).when(engine).waitPosition(PileType.FAST, order.getOrderId());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals(3, result.getData().getQueueNum());
+        assertEquals(2, result.getData().getCarNumberBeforePosition());
+    }
+
+    @Test
+    void queueStatusShouldReturnWaiting_whenNotFoundInQueue() {
+        ChargingOrder order = createOrder(OrderStatus.WAITING);
+        order.setRequestMode(RequestMode.FAST);
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(-1).when(engine).waitPosition(PileType.FAST, order.getOrderId());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals(1, result.getData().getQueueNum());
+        assertEquals(0, result.getData().getCarNumberBeforePosition());
+    }
+
+    @Test
+    void queueStatusShouldReturnCalled_whenPosition0() {
+        ChargingOrder order = createOrder(OrderStatus.CALLED);
+        order.setPileId("F1");
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(0).when(engine).pilePosition("F1", order.getOrderId());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals("called", result.getData().getCarState());
+        assertEquals(1, result.getData().getQueueNum());
+        assertEquals(0, result.getData().getCarNumberBeforePosition());
+        assertEquals("F1", result.getData().getAssignedPileNum());
+    }
+
+    @Test
+    void queueStatusShouldReturnCalled_whenPosition1() {
+        ChargingOrder order = createOrder(OrderStatus.CALLED);
+        order.setPileId("F1");
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(1).when(engine).pilePosition("F1", order.getOrderId());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals(2, result.getData().getQueueNum());
+        assertEquals(1, result.getData().getCarNumberBeforePosition());
+    }
+
+    @Test
+    void queueStatusShouldReturnCalled_whenNotFoundInQueue() {
+        ChargingOrder order = createOrder(OrderStatus.CALLED);
+        order.setPileId("F2");
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(-1).when(engine).pilePosition("F2", order.getOrderId());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals(1, result.getData().getQueueNum());
+        assertEquals(0, result.getData().getCarNumberBeforePosition());
+    }
+
+    @Test
+    void queueStatusShouldReturnCharging() {
+        ChargingOrder order = createOrder(OrderStatus.CHARGING);
+        order.setPileId("F1");
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals("charging", result.getData().getCarState());
+        assertEquals(0, result.getData().getQueueNum());
+        assertEquals(0, result.getData().getCarNumberBeforePosition());
+        assertEquals("F1", result.getData().getAssignedPileNum());
+    }
+
+    @Test
+    void queueStatusShouldReturnDone() {
+        ChargingOrder order = createOrder(OrderStatus.FINISHED);
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals("done", result.getData().getCarState());
+        assertEquals(0, result.getData().getQueueNum());
+        assertEquals(0, result.getData().getCarNumberBeforePosition());
+    }
+
+    @Test
+    void queueStatusShouldFormatRequestTime() {
+        ChargingOrder order = createOrder(OrderStatus.WAITING);
+        order.setRequestMode(RequestMode.FAST);
+        order.setCreatedAt(LocalDateTime.of(2026, 6, 15, 14, 30, 0));
+        doReturn(order).when(chargingOrderMapper).selectOne(any());
+        doReturn(0).when(engine).waitPosition(PileType.FAST, order.getOrderId());
+
+        var result = service.queueStatus(CAR_ID);
+        assertEquals("2026-06-15 14:30:00", result.getData().getRequestTime());
+    }
+
     // ========== Helper ==========
 
     @SafeVarargs
@@ -387,10 +513,14 @@ class ChargingServiceImplTest {
     }
 
     private static ChargingOrder createCalledOrder() {
+        return createOrder(OrderStatus.CALLED);
+    }
+
+    private static ChargingOrder createOrder(OrderStatus status) {
         ChargingOrder o = new ChargingOrder();
         o.setOrderId("order-1");
         o.setCarId(CAR_ID);
-        o.setOrderStatus(OrderStatus.CALLED);
+        o.setOrderStatus(status);
         o.setTargetKwh(AMOUNT);
         return o;
     }

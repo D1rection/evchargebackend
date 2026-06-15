@@ -27,31 +27,43 @@ public class AdminPricingServiceImpl implements AdminPricingService {
     public Result<Map<String, Object>> getPricing() {
         List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(null);
 
-        Map<String, Object> result = new LinkedHashMap<>();
-        double serviceFeeValue = 0.0;
-
+        // 按类型分组
+        Map<PileType, List<BillingRatePeriod>> grouped = new LinkedHashMap<>();
         for (BillingRatePeriod p : periods) {
-            serviceFeeValue = p.getServicePrice().doubleValue();
-            switch (p.getPeriodName()) {
-                case PEAK -> {
-                    result.put("peakStart", p.getStartTime());
-                    result.put("peakEnd", p.getEndTime());
-                    result.put("peakPrice", p.getElectricityPrice().doubleValue());
-                }
-                case NORMAL -> {
-                    result.put("normalStart", p.getStartTime());
-                    result.put("normalEnd", p.getEndTime());
-                    result.put("normalPrice", p.getElectricityPrice().doubleValue());
-                }
-                case VALLEY -> {
-                    result.put("valleyStart", p.getStartTime());
-                    result.put("valleyEnd", p.getEndTime());
-                    result.put("valleyPrice", p.getElectricityPrice().doubleValue());
-                }
-            }
+            grouped.computeIfAbsent(p.getPileType(), k -> new ArrayList<>()).add(p);
         }
 
-        result.put("serviceFeeValue", serviceFeeValue);
+        Map<String, Object> result = new LinkedHashMap<>();
+        for (PileType type : PileType.values()) {
+            List<BillingRatePeriod> list = grouped.getOrDefault(type, List.of());
+            Map<String, Object> typeData = new LinkedHashMap<>();
+            double serviceFeeValue = 0.0;
+
+            for (BillingRatePeriod p : list) {
+                serviceFeeValue = p.getServicePrice().doubleValue();
+                switch (p.getPeriodName()) {
+                    case PEAK -> {
+                        typeData.put("peakStart", p.getStartTime());
+                        typeData.put("peakEnd", p.getEndTime());
+                        typeData.put("peakPrice", p.getElectricityPrice().doubleValue());
+                    }
+                    case NORMAL -> {
+                        typeData.put("normalStart", p.getStartTime());
+                        typeData.put("normalEnd", p.getEndTime());
+                        typeData.put("normalPrice", p.getElectricityPrice().doubleValue());
+                    }
+                    case VALLEY -> {
+                        typeData.put("valleyStart", p.getStartTime());
+                        typeData.put("valleyEnd", p.getEndTime());
+                        typeData.put("valleyPrice", p.getElectricityPrice().doubleValue());
+                    }
+                }
+            }
+
+            typeData.put("serviceFeeValue", serviceFeeValue);
+            result.put(type.name(), typeData);
+        }
+
         return Result.success(result);
     }
 

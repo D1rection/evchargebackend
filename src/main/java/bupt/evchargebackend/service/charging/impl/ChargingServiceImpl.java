@@ -421,8 +421,8 @@ public class ChargingServiceImpl implements ChargingService {
             FeeResult feeResult = calculateFees(power, target, calcStart, calcEnd, periods);
             resp.setCurrentAmount(feeResult.totalKwh.setScale(2, RoundingMode.HALF_UP));
             resp.setCurrentChargeFee(feeResult.chargeFee.setScale(2, RoundingMode.HALF_UP));
-            resp.setCurrentServiceFee(BigDecimal.valueOf(5));
-            resp.setTotalCurrentFee(feeResult.chargeFee.add(BigDecimal.valueOf(5)).setScale(2, RoundingMode.HALF_UP));
+            resp.setCurrentServiceFee(feeResult.serviceFee.setScale(2, RoundingMode.HALF_UP));
+            resp.setTotalCurrentFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
 
             if (session.getSessionStatus() == SessionStatus.CHARGING) {
                 LocalTime nowTime = timeProvider.now().toLocalTime();

@@ -23,13 +23,13 @@ public class AdminFaultController {
             @RequestParam int pageNum,
             @RequestParam int pageSize,
             @RequestParam(required = false) Integer status) {
-        return Result.of(() -> adminFaultService.listFaults(pageNum, pageSize, status));
+        return Result.success(adminFaultService.listFaults(pageNum, pageSize, status));
     }
 
     @PostMapping("/faults/{faultId}")
     public Result<Void> resolveFault(@PathVariable String faultId,
                                      @RequestBody FaultResolveRequest request) {
-        return Result.ofVoid(() -> adminFaultService.resolveFault(
-                faultId, request.getResolveCode(), request.getRemark()));
+        adminFaultService.resolveFault(faultId, request.getResolveCode(), request.getRemark());
+        return Result.success();
     }
 }

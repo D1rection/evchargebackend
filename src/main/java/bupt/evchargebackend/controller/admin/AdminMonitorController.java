@@ -21,11 +21,11 @@ public class AdminMonitorController {
     public Result<PageResult<Map<String, Object>>> listPiles(
             @RequestParam(required = false) Integer pageNum,
             @RequestParam(required = false) Integer pageSize) {
-        return Result.of(() -> adminMonitorService.listPileStatus(pageNum, pageSize));
+        return Result.success(adminMonitorService.listPileStatus(pageNum, pageSize));
     }
 
     @GetMapping("/dashboard")
     public Result<Map<String, Object>> dashboard() {
-        return Result.of(() -> adminMonitorService.getDashboard());
+        return Result.success(adminMonitorService.getDashboard());
     }
 }

@@ -19,13 +19,13 @@ public class AdminAccountController {
 
     @PostMapping("/create")
     public Result<Map<String, Object>> create(@RequestBody AdminAccountRequest request) {
-        return Result.of(() -> adminAccountService.register(
+        return Result.success(adminAccountService.register(
                 request.getUserName(), request.getPassword()));
     }
 
     @PostMapping("/login")
     public Result<Map<String, Object>> login(@RequestBody AdminAccountRequest request) {
-        return Result.of(() -> adminAccountService.login(
+        return Result.success(adminAccountService.login(
                 request.getUserName(), request.getPassword()));
     }
 }

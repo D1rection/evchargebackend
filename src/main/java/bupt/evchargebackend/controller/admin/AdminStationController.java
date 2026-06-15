@@ -21,32 +21,35 @@ public class AdminStationController {
 
     @GetMapping("/station-config")
     public Result<Map<String, Object>> getStationConfig() {
-        return Result.of(() -> adminStationService.getStationConfig());
+        return Result.success(adminStationService.getStationConfig());
     }
 
     @PostMapping("/station-config")
     public Result<Void> updateStationConfig(@RequestBody StationConfigRequest request) {
-        return Result.ofVoid(() -> adminStationService.updateStationConfig(request));
+        adminStationService.updateStationConfig(request);
+        return Result.success();
     }
 
     @GetMapping("/devices")
     public Result<List<Map<String, Object>>> listDevices() {
-        return Result.of(() -> adminStationService.listDevices());
+        return Result.success(adminStationService.listDevices());
     }
 
     @PostMapping("/devices")
     public Result<Map<String, Object>> addDevice(@RequestBody PileRequest request) {
-        return Result.of(() -> adminStationService.addDevice(request));
+        return Result.success(adminStationService.addDevice(request));
     }
 
     @PostMapping("/devices/update/{pileId}")
     public Result<Void> updateDevice(@PathVariable String pileId,
                                      @RequestBody PileRequest request) {
-        return Result.ofVoid(() -> adminStationService.updateDevice(pileId, request));
+        adminStationService.updateDevice(pileId, request);
+        return Result.success();
     }
 
     @PostMapping("/devices/delete/{pileId}")
     public Result<Void> deleteDevice(@PathVariable String pileId) {
-        return Result.ofVoid(() -> adminStationService.deleteDevice(pileId));
+        adminStationService.deleteDevice(pileId);
+        return Result.success();
     }
 }

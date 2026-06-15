@@ -26,7 +26,7 @@ public class AdminReportController {
             @RequestParam String timeRange,
             @RequestParam(required = false) String startDate,
             @RequestParam(required = false) String endDate) {
-        return Result.of(() -> adminReportService.generateReport(
+        return Result.success(adminReportService.generateReport(
                 targetType, pileId, timeRange, startDate, endDate));
     }
 

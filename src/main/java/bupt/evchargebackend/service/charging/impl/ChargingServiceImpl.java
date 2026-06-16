@@ -776,6 +776,18 @@ public class ChargingServiceImpl implements ChargingService {
         FeeResult feeResult = calculateFees(power, target, session.getStartTime(), endTime, periods);
         long chargeMinutes = Duration.between(session.getStartTime(), endTime).toMinutes();
 
+        // 先清理队列，避免后续步骤异常导致队列残留
+        QueueEntry qe = queueEntryMapper.selectOne(
+                new QueryWrapper<QueueEntry>()
+                        .eq("queue_type", "PILE")
+                        .eq("queue_key", pile.getPileId())
+                        .orderByAsc("id")
+                        .last("LIMIT 1")
+        );
+        if (qe != null) queueEntryMapper.deleteById(qe.getId());
+        engine.onPileReleased(pile.getPileId(), pileType);
+        tryFillFromWaiting(pile.getPileId(), pileType);
+
         Bill bill = new Bill();
         bill.setBillId(UUID.randomUUID().toString());
         bill.setBillNo("BILL-" + System.currentTimeMillis());
@@ -804,17 +816,6 @@ public class ChargingServiceImpl implements ChargingService {
         pile.setWorkingState(WorkingState.AVAILABLE);
         pile.setCurrentSessionId(null);
         chargingPileMapper.updateById(pile);
-
-        QueueEntry qe = queueEntryMapper.selectOne(
-                new QueryWrapper<QueueEntry>()
-                        .eq("queue_type", "PILE")
-                        .eq("queue_key", pile.getPileId())
-                        .orderByAsc("id")
-                        .last("LIMIT 1")
-        );
-        if (qe != null) queueEntryMapper.deleteById(qe.getId());
-        engine.onPileReleased(pile.getPileId(), pileType);
-        tryFillFromWaiting(pile.getPileId(), pileType);
     }
 
     private void insertQueueEntry(String queueType, String queueKey, String orderId) {

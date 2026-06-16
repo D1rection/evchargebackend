@@ -2,6 +2,8 @@ package bupt.evchargebackend.service.simulation.impl;
 
 import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.common.time.SwitchableTimeProvider;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
 import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
@@ -30,6 +32,8 @@ import java.util.*;
 
 @Service
 public class SimulationServiceImpl implements SimulationService {
+
+    private static final Logger log = LoggerFactory.getLogger(SimulationServiceImpl.class);
 
     private record SimEvent(LocalDateTime time, String type, String targetId,
                             String chargeType, double value) {}
@@ -176,13 +180,14 @@ public class SimulationServiceImpl implements SimulationService {
 
     private void processEvent(SimEvent e) {
         try {
+            log.info("触发事件: ({},{},{},{})", e.type, e.targetId, e.chargeType, e.value);
             switch (e.type) {
                 case "A" -> processApply(e);
                 case "C" -> processChange(e);
                 case "B" -> processBreakdown(e);
             }
         } catch (Exception ex) {
-            // 事件触发失败不影响后续
+            log.error("事件触发失败: ({},{},{},{}) - {}", e.type, e.targetId, e.chargeType, e.value, ex.getMessage());
         }
     }
 

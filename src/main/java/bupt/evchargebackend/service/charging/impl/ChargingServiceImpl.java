@@ -681,7 +681,7 @@ public class ChargingServiceImpl implements ChargingService {
             List<ChargingPile> piles = chargingPileMapper.selectList(
                     new QueryWrapper<ChargingPile>()
                             .eq("pile_type", pileType)
-                            .in("working_state", WorkingState.AVAILABLE, WorkingState.CHARGING)
+                            .in("working_state", "AVAILABLE", "CHARGING")
             );
             if (!piles.isEmpty()) {
                 piles.sort(Comparator.comparingLong(this::totalActiveMinutes));

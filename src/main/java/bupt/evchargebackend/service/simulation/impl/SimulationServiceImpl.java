@@ -5,6 +5,7 @@ import bupt.evchargebackend.common.time.SwitchableTimeProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
+import bupt.evchargebackend.dto.charging.ChargingEndRequest;
 import bupt.evchargebackend.dto.charging.ChargingRequest;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
@@ -232,9 +233,28 @@ public class SimulationServiceImpl implements SimulationService {
             req.setRequestMode(e.chargeType.equals("F") ? "FAST" : "SLOW");
             chargingService.submit(req);
         } else if (e.value == 0) {
-            ChargingCancelRequest req = new ChargingCancelRequest();
-            req.setCarId(e.targetId);
-            chargingService.cancel(req);
+            // 先尝试普通取消（WAITING/CALLED）
+            ChargingCancelRequest cancelReq = new ChargingCancelRequest();
+            cancelReq.setCarId(e.targetId);
+            var cancelResult = chargingService.cancel(cancelReq);
+            if (cancelResult.getCode() == 200) return;
+
+            // 可能是 CHARGING 状态，改走结束充电
+            ChargingSession session = chargingSessionMapper.selectOne(
+                    new QueryWrapper<ChargingSession>()
+                            .eq("car_id", e.targetId)
+                            .eq("session_status", SessionStatus.CHARGING)
+                            .orderByDesc("created_at").last("LIMIT 1")
+            );
+            if (session != null) {
+                ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
+                if (pile != null) {
+                    ChargingEndRequest endReq = new ChargingEndRequest();
+                    endReq.setCarId(e.targetId);
+                    endReq.setChargingPileNum(pile.getPileId());
+                    chargingService.end(endReq);
+                }
+            }
         }
     }
 

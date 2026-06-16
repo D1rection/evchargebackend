@@ -92,7 +92,7 @@ public class SimulationServiceImpl implements SimulationService {
             processEvent(ALL_EVENTS.get(eventCursor));
             eventCursor++;
         }
-        advanceCharging(minutes);
+        advanceCharging();
         return Result.success();
     }
 
@@ -263,27 +263,29 @@ public class SimulationServiceImpl implements SimulationService {
 
     // ========== 充电推进 ==========
 
-    private void advanceCharging(int minutes) {
+    private void advanceCharging() {
+        LocalDateTime now = timeProvider.now();
         var sessions = chargingSessionMapper.selectList(
                 new QueryWrapper<ChargingSession>()
                         .eq("session_status", SessionStatus.CHARGING)
         );
         for (var session : sessions) {
+            if (session.getStartTime() == null) continue;
+            long elapsedSeconds = Duration.between(session.getStartTime(), now).getSeconds();
+            if (elapsedSeconds <= 0) continue;
             ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
             if (pile == null) continue;
             BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
-            BigDecimal increment = power.multiply(BigDecimal.valueOf(minutes))
-                    .divide(BigDecimal.valueOf(60), 10, RoundingMode.HALF_UP);
-            BigDecimal charged = session.getChargedKwh().add(increment);
+            BigDecimal estimated = power.multiply(BigDecimal.valueOf(elapsedSeconds))
+                    .divide(BigDecimal.valueOf(3600), 10, RoundingMode.HALF_UP);
+            BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
+            BigDecimal charged = estimated.min(target);
 
-            if (charged.compareTo(session.getTargetKwh()) >= 0) {
-                charged = session.getTargetKwh();
-                session.setChargedKwh(charged);
-                chargingSessionMapper.updateById(session);
+            session.setChargedKwh(charged);
+            chargingSessionMapper.updateById(session);
+
+            if (charged.compareTo(target) >= 0) {
                 chargingService.autoFinish(session.getSessionId());
-            } else {
-                session.setChargedKwh(charged);
-                chargingSessionMapper.updateById(session);
             }
         }
     }

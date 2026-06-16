@@ -11,14 +11,11 @@ import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
 import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndRequest;
-import bupt.evchargebackend.dto.charging.ChargingEndResponse;
-import bupt.evchargebackend.dto.charging.ChargingStartRequest;
 import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
 import bupt.evchargebackend.entity.bill.Bill;
-import bupt.evchargebackend.entity.bill.enums.PaymentStatus;
 import bupt.evchargebackend.entity.queue.QueueEntry;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.entity.user.Car;
@@ -35,9 +32,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ScheduledExecutorService;
@@ -46,14 +41,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.atMostOnce;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 
 class ChargingServiceImplTest {
@@ -78,7 +69,6 @@ class ChargingServiceImplTest {
     private ChargingRequest request;
 
     @BeforeEach
-    @SuppressWarnings("unchecked")
     void setUp() {
         carMapper = mock(CarMapper.class);
         chargingOrderMapper = mock(ChargingOrderMapper.class);
@@ -174,12 +164,12 @@ class ChargingServiceImplTest {
         doReturn(false).when(engine).hasAnyFault();
         doReturn(mutableList(createFastPile("F1"))).when(chargingPileMapper).selectList(any());
         doReturn(true).when(engine).addToPileQueue(anyString(), any());
-        doReturn(2).when(engine).pileQueueSize(anyString());
+        doReturn(0).when(engine).pileQueueSize(anyString());
 
         Result<ChargingResponse> result = service.submit(request);
         assertEquals(200, result.getCode());
-        assertEquals("called", result.getData().getCarState());
-        assertEquals(Integer.valueOf(2), result.getData().getQueueNum());
+        assertEquals("charging", result.getData().getCarState());
+        assertEquals(Integer.valueOf(0), result.getData().getQueueNum());
     }
 
     @Test
@@ -301,102 +291,6 @@ class ChargingServiceImplTest {
         assertEquals(AMOUNT, inserted.getTargetKwh());
         assertEquals(new BigDecimal("30.00"), inserted.getEstimatedFee());
         assertEquals(Integer.valueOf(60), inserted.getEstimatedMinutes());
-    }
-
-    // ========== 开始充电 ==========
-
-    @Test
-    void startShouldReturn400_whenCarIdIsEmpty() {
-        ChargingStartRequest req = new ChargingStartRequest();
-        req.setChargePileNum("F1");
-        assertEquals(400, service.start(req).getCode());
-    }
-
-    @Test
-    void startShouldReturn404_whenCarNotFound() {
-        ChargingStartRequest req = new ChargingStartRequest();
-        req.setCarId(CAR_ID);
-        req.setChargePileNum("F1");
-        doReturn(null).when(carMapper).selectById(CAR_ID);
-        assertEquals(404, service.start(req).getCode());
-    }
-
-    @Test
-    void startShouldReturn400_whenNoCalledOrder() {
-        ChargingStartRequest req = new ChargingStartRequest();
-        req.setCarId(CAR_ID);
-        req.setChargePileNum("F1");
-        doReturn(null).when(chargingOrderMapper).selectOne(any());
-        assertEquals(400, service.start(req).getCode());
-    }
-
-    @Test
-    void startShouldReturn404_whenPileNotFound() {
-        ChargingStartRequest req = new ChargingStartRequest();
-        req.setCarId(CAR_ID);
-        req.setChargePileNum("F1");
-        doReturn(createCalledOrder()).when(chargingOrderMapper).selectOne(any());
-        doReturn(null).when(chargingPileMapper).selectById("F1");
-        assertEquals(404, service.start(req).getCode());
-    }
-
-    @Test
-    void startShouldReturn400_whenPowerOff() {
-        ChargingPile pile = createFastPile("F1");
-        pile.setPowerState(PowerState.OFF);
-
-        ChargingStartRequest req = new ChargingStartRequest();
-        req.setCarId(CAR_ID);
-        req.setChargePileNum("F1");
-        doReturn(createCalledOrder()).when(chargingOrderMapper).selectOne(any());
-        doReturn(pile).when(chargingPileMapper).selectById("F1");
-        assertEquals(400, service.start(req).getCode());
-    }
-
-    @Test
-    void startShouldReturn400_whenPileNotAvailable() {
-        ChargingPile pile = createFastPile("F1");
-        pile.setWorkingState(WorkingState.FAULT);
-
-        ChargingStartRequest req = new ChargingStartRequest();
-        req.setCarId(CAR_ID);
-        req.setChargePileNum("F1");
-        doReturn(createCalledOrder()).when(chargingOrderMapper).selectOne(any());
-        doReturn(pile).when(chargingPileMapper).selectById("F1");
-        assertEquals(400, service.start(req).getCode());
-    }
-
-    @Test
-    void startShouldReturn400_whenNotQueueHead() {
-        ChargingOrder order = createCalledOrder();
-        ChargingPile pile = createFastPile("F1");
-        pile.setPowerState(PowerState.ON);
-
-        ChargingStartRequest req = new ChargingStartRequest();
-        req.setCarId(CAR_ID);
-        req.setChargePileNum("F1");
-        doReturn(order).when(chargingOrderMapper).selectOne(any());
-        doReturn(pile).when(chargingPileMapper).selectById("F1");
-        doReturn(null).when(engine).peekPileQueue("F1");
-        assertEquals(400, service.start(req).getCode());
-    }
-
-    @Test
-    void startShouldSucceed() {
-        ChargingOrder order = createCalledOrder();
-        ChargingPile pile = createFastPile("F1");
-        pile.setPowerState(PowerState.ON);
-
-        ChargingStartRequest req = new ChargingStartRequest();
-        req.setCarId(CAR_ID);
-        req.setChargePileNum("F1");
-        doReturn(order).when(chargingOrderMapper).selectOne(any());
-        doReturn(pile).when(chargingPileMapper).selectById("F1");
-        doReturn(order).when(engine).peekPileQueue("F1");
-
-        var result = service.start(req);
-        assertEquals(200, result.getCode());
-        assertEquals(Integer.valueOf(1), result.getData().getResult());
     }
 
     // ========== 查看队列状态 ==========

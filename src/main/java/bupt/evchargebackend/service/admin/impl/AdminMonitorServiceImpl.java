@@ -26,6 +26,7 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         String baseSql = """
                 SELECT
                     cp.pile_id AS pileId,
+                    cp.pile_no AS pileNo,
                     cp.pile_type AS pileType,
                     cp.power_state AS powerState,
                     cp.working_state AS workingState,

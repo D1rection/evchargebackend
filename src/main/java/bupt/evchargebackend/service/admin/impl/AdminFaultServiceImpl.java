@@ -28,20 +28,20 @@ public class AdminFaultServiceImpl implements AdminFaultService {
         List<Object> params = new ArrayList<>();
 
         if (status != null) {
-            whereSql.append(" WHERE fault_status = ?");
+            whereSql.append(" WHERE fr.fault_status = ?");
             params.add(status == 1 ? "ACTIVE" : "RECOVERED");
         }
 
-        String countSql = "SELECT COUNT(*) FROM fault_record" + whereSql;
+        String countSql = "SELECT COUNT(*) FROM fault_record fr" + whereSql;
         Long total = jdbcTemplate.query(countSql,
                 rs -> rs.next() ? rs.getLong(1) : 0L,
                 params.toArray());
 
         int offset = (pageNum - 1) * pageSize;
-        String pageSql = "SELECT fault_id, pile_id, fault_code, fault_time, fault_status, " +
-                         "resolve_code, recover_time, resolver, remark " +
-                         "FROM fault_record" + whereSql +
-                         " ORDER BY fault_time DESC LIMIT ? OFFSET ?";
+        String pageSql = "SELECT fr.fault_id, fr.pile_id, cp.pile_no AS pileNo, fr.fault_code, fr.fault_time, fr.fault_status, " +
+                         "fr.resolve_code, fr.recover_time, fr.resolver, fr.remark " +
+                         "FROM fault_record fr LEFT JOIN charging_pile cp ON fr.pile_id = cp.pile_id" + whereSql +
+                         " ORDER BY fr.fault_time DESC LIMIT ? OFFSET ?";
         params.add(pageSize);
         params.add(offset);
 
@@ -51,6 +51,7 @@ public class AdminFaultServiceImpl implements AdminFaultService {
             Map<String, Object> item = new LinkedHashMap<>();
             item.put("id", row.get("fault_id"));
             item.put("pileId", row.get("pile_id"));
+            item.put("pileNo", row.get("pileNo"));
             item.put("faultCode", row.get("fault_code"));
             item.put("faultTime", row.get("fault_time") != null ? row.get("fault_time").toString() : null);
             String fs = (String) row.get("fault_status");

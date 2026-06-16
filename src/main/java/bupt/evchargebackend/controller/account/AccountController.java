@@ -28,7 +28,7 @@ public class AccountController {
         return Result.success(accountService.createAccount(
                 pickString(request, "username", "userName"),
                 pickString(request, "password"),
-                pickString(request, "carId", "car_Id", "car_id"),
+                null,
                 pickString(request, "carNo", "car_No", "car_no"),
                 pickBigDecimal(request, "batteryCapacityKwh", "carCapacity", "car_Capacity", "car_capacity"),
                 pickString(request, "role")
@@ -48,7 +48,7 @@ public class AccountController {
         return Result.success(accountService.addVehicle(
                 pickString(request, "userId", "user_Id", "user_id"),
                 pickString(request, "username", "userName"),
-                pickString(request, "carId", "car_Id", "car_id"),
+                null,
                 pickString(request, "carNo", "car_No", "car_no"),
                 pickBigDecimal(request, "batteryCapacityKwh", "carCapacity", "car_Capacity", "car_capacity")
         ));

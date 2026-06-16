@@ -2,24 +2,20 @@ package bupt.evchargebackend.service.admin.impl;
 
 import bupt.evchargebackend.common.response.PageResult;
 import bupt.evchargebackend.common.response.Result;
-import bupt.evchargebackend.common.time.TimeProvider;
 import bupt.evchargebackend.service.admin.AdminMonitorService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
 public class AdminMonitorServiceImpl implements AdminMonitorService {
 
     private final JdbcTemplate jdbcTemplate;
-    private final TimeProvider timeProvider;
 
-    public AdminMonitorServiceImpl(JdbcTemplate jdbcTemplate, TimeProvider timeProvider) {
+    public AdminMonitorServiceImpl(JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
-        this.timeProvider = timeProvider;
     }
 
     @Override
@@ -37,7 +33,7 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
                     cs.car_id AS currentCarId,
                     c.car_no AS currentCarNo,
                     CASE WHEN cs.start_time IS NOT NULL
-                         THEN TIMESTAMPDIFF(MINUTE, cs.start_time, ?)
+                         THEN TIMESTAMPDIFF(MINUTE, cs.start_time, NOW())
                          ELSE 0 END AS currentChargeDuration,
                     cp.total_charge_count AS totalChargeCount,
                     CONCAT(FLOOR(cp.total_charge_minutes / 60), ':', LPAD(cp.total_charge_minutes % 60, 2, '0'), ':00') AS totalChargeTime,
@@ -49,10 +45,8 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
                 ORDER BY cp.pile_id
                 """;
 
-        LocalDateTime now = timeProvider.now();
-
         if (pageNum == null || pageSize == null) {
-            List<Map<String, Object>> all = jdbcTemplate.queryForList(baseSql, now);
+            List<Map<String, Object>> all = jdbcTemplate.queryForList(baseSql);
             return Result.success(PageResult.of(all, all.size(), 1, all.size()));
         }
 
@@ -60,7 +54,7 @@ public class AdminMonitorServiceImpl implements AdminMonitorService {
         Long total = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM charging_pile", Long.class);
 
         String pageSql = baseSql + " LIMIT " + pageSize + " OFFSET " + offset;
-        List<Map<String, Object>> list = jdbcTemplate.queryForList(pageSql, now);
+        List<Map<String, Object>> list = jdbcTemplate.queryForList(pageSql);
 
         for (Map<String, Object> row : list) {
             Object val = row.get("totalCapacity");

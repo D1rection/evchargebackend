@@ -17,6 +17,7 @@ services:
     environment:
       - MYSQL_DATABASE=evcharge
       - MYSQL_ROOT_PASSWORD=${DB_PASSWORD}
+      - TZ=Asia/Shanghai
     ports:
       - "3306:3306"
     volumes:

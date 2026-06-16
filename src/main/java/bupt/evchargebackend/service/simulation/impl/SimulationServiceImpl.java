@@ -70,6 +70,11 @@ public class SimulationServiceImpl implements SimulationService {
     public Result<Void> startSimulation(LocalDateTime time) {
         timeProvider.startSimulation(time);
         eventCursor = 0;
+        while (eventCursor < ALL_EVENTS.size()
+                && !ALL_EVENTS.get(eventCursor).time.isAfter(time)) {
+            processEvent(ALL_EVENTS.get(eventCursor));
+            eventCursor++;
+        }
         return Result.success();
     }
 

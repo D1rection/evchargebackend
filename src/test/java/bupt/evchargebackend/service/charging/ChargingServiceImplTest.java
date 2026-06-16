@@ -611,37 +611,9 @@ class ChargingServiceImplTest {
     }
 
     @Test
-    void stateShouldReturnCompleted_whenFinished() {
-        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
-        LocalDateTime end = start.plusHours(2);
-
-        ChargingSession session = createSession(start, 40, SessionStatus.FINISHED);
-        session.setEndTime(end);
-        session.setChargedKwh(new BigDecimal("40.00"));
-
-        doReturn(session).when(chargingSessionMapper).selectOne(any());
-
-        var result = service.chargingState(CAR_ID);
-        assertEquals("completed", result.getData().getStatus());
-        assertEquals("40.00", result.getData().getCurrentAmount().toString());
-        assertEquals("02:00:00", result.getData().getCurrentDuration());
-    }
-
-    @Test
-    void stateShouldReturnInterrupted_whenInterrupted() {
-        LocalDateTime start = LocalDateTime.of(2026, 6, 16, 14, 0);
-        LocalDateTime end = start.plusMinutes(30);
-
-        ChargingSession session = createSession(start, 40, SessionStatus.INTERRUPTED);
-        session.setEndTime(end);
-        session.setChargedKwh(new BigDecimal("15.00"));
-
-        doReturn(session).when(chargingSessionMapper).selectOne(any());
-
-        var result = service.chargingState(CAR_ID);
-        assertEquals("interrupted", result.getData().getStatus());
-        assertEquals("15.00", result.getData().getCurrentAmount().toString());
-        assertEquals("00:30:00", result.getData().getCurrentDuration());
+    void stateShouldReturnNone_whenSessionNotCharging() {
+        doReturn(null).when(chargingSessionMapper).selectOne(any());
+        assertEquals("none", service.chargingState(CAR_ID).getData().getStatus());
     }
 
     // ========== 结束充电 ==========

@@ -330,7 +330,12 @@ public class SimulationServiceImpl implements SimulationService {
         for (var session : sessions) {
             if (session.getStartTime() == null) continue;
             long elapsedSeconds = Duration.between(session.getStartTime(), now).getSeconds();
-            if (elapsedSeconds <= 0) continue;
+            if (elapsedSeconds <= 0) {
+                if ("V6".equals(session.getCarId())) {
+                    log.warn("V6 跳过: startTime={}, now={}, elapsed={}", session.getStartTime(), now, elapsedSeconds);
+                }
+                continue;
+            }
             ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
             if (pile == null) continue;
             BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
@@ -338,6 +343,11 @@ public class SimulationServiceImpl implements SimulationService {
                     .divide(BigDecimal.valueOf(3600), 10, RoundingMode.HALF_UP);
             BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
             BigDecimal charged = estimated.min(target);
+
+            if ("V6".equals(session.getCarId())) {
+                log.warn("V6 advance: startTime={}, now={}, elapsed={}s, estimated={}, old={}",
+                        session.getStartTime(), now, elapsedSeconds, estimated, session.getChargedKwh());
+            }
 
             session.setChargedKwh(charged);
             chargingSessionMapper.updateById(session);

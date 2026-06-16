@@ -14,8 +14,10 @@ import bupt.evchargebackend.entity.charging.enums.SessionStatus;
 import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
+import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
+import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.service.charging.ChargingService;
 import bupt.evchargebackend.service.pile.PileService;
@@ -46,6 +48,7 @@ public class SimulationServiceImpl implements SimulationService {
     private final ChargingSessionMapper chargingSessionMapper;
     private final ChargingPileMapper chargingPileMapper;
     private final ChargingOrderMapper chargingOrderMapper;
+    private final BillingRatePeriodMapper billingRatePeriodMapper;
     private final SchedulingEngine engine;
 
     private int eventCursor = 0;
@@ -56,6 +59,7 @@ public class SimulationServiceImpl implements SimulationService {
                                   ChargingSessionMapper chargingSessionMapper,
                                   ChargingPileMapper chargingPileMapper,
                                   ChargingOrderMapper chargingOrderMapper,
+                                  BillingRatePeriodMapper billingRatePeriodMapper,
                                   SchedulingEngine engine) {
         this.timeProvider = timeProvider;
         this.chargingService = chargingService;
@@ -63,6 +67,7 @@ public class SimulationServiceImpl implements SimulationService {
         this.chargingSessionMapper = chargingSessionMapper;
         this.chargingPileMapper = chargingPileMapper;
         this.chargingOrderMapper = chargingOrderMapper;
+        this.billingRatePeriodMapper = billingRatePeriodMapper;
         this.engine = engine;
     }
 
@@ -118,9 +123,8 @@ public class SimulationServiceImpl implements SimulationService {
                     p.put("carId", s.getCarId());
                     p.put("chargedKwh", s.getChargedKwh());
                     p.put("requestAmount", s.getTargetKwh());
-                    ChargingOrder o = chargingOrderMapper.selectById(s.getOrderId());
-                    p.put("currentFee", o != null && o.getEstimatedFee() != null
-                            ? o.getEstimatedFee() : BigDecimal.ZERO);
+                    BigDecimal charged = s.getChargedKwh() != null ? s.getChargedKwh() : BigDecimal.ZERO;
+                    p.put("currentFee", calculateCurrentFee(charged, pile.getPileType()));
                 }
             } else {
                 p.put("carId", null);
@@ -179,6 +183,29 @@ public class SimulationServiceImpl implements SimulationService {
         item.put("requestAmount", o.getTargetKwh());
         item.put("requestMode", o.getRequestMode().name());
         return item;
+    }
+
+    /** 按当前时刻电价算已充电量的费用。 */
+    private BigDecimal calculateCurrentFee(BigDecimal chargedKwh, PileType pileType) {
+        if (chargedKwh == null || chargedKwh.compareTo(BigDecimal.ZERO) <= 0) {
+            return BigDecimal.ZERO;
+        }
+        int minute = timeProvider.now().getHour() * 60 + timeProvider.now().getMinute();
+        BillingRatePeriod period = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        ).stream().filter(p -> {
+            int s = parseMinute(p.getStartTime());
+            int e = parseMinute(p.getEndTime());
+            return s <= e ? (minute >= s && minute < e) : (minute >= s || minute < e);
+        }).findFirst().orElse(null);
+        if (period == null) return BigDecimal.ZERO;
+        return chargedKwh.multiply(period.getElectricityPrice().add(period.getServicePrice()))
+                .setScale(2, RoundingMode.HALF_UP);
+    }
+
+    private static int parseMinute(String time) {
+        String[] parts = time.split(":");
+        return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
     }
 
     // ========== 事件处理 ==========

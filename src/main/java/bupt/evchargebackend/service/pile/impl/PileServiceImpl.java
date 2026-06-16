@@ -15,13 +15,15 @@ import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.user.CarMapper;
 import bupt.evchargebackend.service.pile.PileService;
+import bupt.evchargebackend.common.time.TimeProvider;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
-import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -32,15 +34,18 @@ public class PileServiceImpl implements PileService {
     private final SchedulingEngine engine;
     private final ChargingSessionMapper chargingSessionMapper;
     private final CarMapper carMapper;
+    private final TimeProvider timeProvider;
 
     public PileServiceImpl(ChargingPileMapper chargingPileMapper,
                            SchedulingEngine engine,
                            ChargingSessionMapper chargingSessionMapper,
-                           CarMapper carMapper) {
+                           CarMapper carMapper,
+                           TimeProvider timeProvider) {
         this.chargingPileMapper = chargingPileMapper;
         this.engine = engine;
         this.chargingSessionMapper = chargingSessionMapper;
         this.carMapper = carMapper;
+        this.timeProvider = timeProvider;
     }
 
     @Override
@@ -112,26 +117,22 @@ public class PileServiceImpl implements PileService {
 
         // 2. 获取队列
         List<PileQueueItem> items = new ArrayList<>();
-        BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
         ChargingOrder head = engine.peekPileQueue(pileId);
         List<ChargingOrder> waiting = engine.getPileQueue(pileId);
 
-        // 3. 遍历队列，查车辆信息并算等待时间
-        long headRemainSec = 0;
+        // 3. 遍历队列，查车辆信息并算已等待时间
+        LocalDateTime now = timeProvider.now();
         if (head != null) {
             Car car = carMapper.selectById(head.getCarId());
+            long waitSec = 0;
             ChargingSession session = chargingSessionMapper.selectOne(
                     new QueryWrapper<ChargingSession>()
                             .eq("pile_id", pileId)
                             .eq("session_status", SessionStatus.CHARGING)
                             .orderByDesc("created_at").last("LIMIT 1")
             );
-            if (session != null) {
-                BigDecimal remain = session.getTargetKwh().subtract(session.getChargedKwh());
-                if (remain.compareTo(BigDecimal.ZERO) > 0) {
-                    headRemainSec = remain.divide(power, 10, RoundingMode.HALF_UP)
-                            .multiply(BigDecimal.valueOf(3600)).longValue();
-                }
+            if (session != null && session.getStartTime() != null) {
+                waitSec = Duration.between(session.getStartTime(), now).getSeconds();
             }
             if (car != null) {
                 PileQueueItem item = new PileQueueItem();
@@ -139,29 +140,26 @@ public class PileServiceImpl implements PileService {
                 item.setCarCapacity(car.getBatteryCapacityKwh());
                 item.setRequestAmount(head.getTargetKwh());
                 item.setQueuePosition(0);
-                item.setWaitTime(formatDuration(headRemainSec));
+                item.setWaitTime(formatDuration(Math.max(0, waitSec)));
                 items.add(item);
             }
         }
 
         int posBase = head != null ? 1 : 0;
-        long accumulated = headRemainSec;
         for (int i = 0; i < waiting.size(); i++) {
-            Car car = carMapper.selectById(waiting.get(i).getCarId());
+            ChargingOrder order = waiting.get(i);
+            Car car = carMapper.selectById(order.getCarId());
             if (car != null) {
                 PileQueueItem item = new PileQueueItem();
-                ChargingOrder order = waiting.get(i);
                 item.setCarId(order.getCarId());
                 item.setCarCapacity(car.getBatteryCapacityKwh());
                 item.setRequestAmount(order.getTargetKwh());
                 item.setQueuePosition(i + posBase);
-                item.setWaitTime(formatDuration(accumulated));
+                long waitSec = order.getCreatedAt() != null
+                        ? Duration.between(order.getCreatedAt(), now).getSeconds() : 0;
+                item.setWaitTime(formatDuration(Math.max(0, waitSec)));
                 items.add(item);
             }
-            long chargeSec = waiting.get(i).getTargetKwh()
-                    .divide(power, 10, RoundingMode.HALF_UP)
-                    .multiply(BigDecimal.valueOf(3600)).longValue();
-            accumulated += chargeSec;
         }
 
         return Result.success(items);

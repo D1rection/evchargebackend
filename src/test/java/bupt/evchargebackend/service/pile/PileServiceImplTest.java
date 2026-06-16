@@ -13,18 +13,19 @@ import bupt.evchargebackend.entity.user.Car;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.user.CarMapper;
+import bupt.evchargebackend.common.time.TimeProvider;
 import bupt.evchargebackend.service.pile.impl.PileServiceImpl;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 
@@ -34,10 +35,12 @@ class PileServiceImplTest {
     private SchedulingEngine engine;
     private ChargingSessionMapper chargingSessionMapper;
     private CarMapper carMapper;
+    private TimeProvider timeProvider;
     private PileServiceImpl service;
 
     private static final String PILE_ID = "F1";
     private static final String CAR_ID = "C001";
+    private static final LocalDateTime NOW = LocalDateTime.of(2026, 6, 16, 14, 0);
 
     @BeforeEach
     void setUp() {
@@ -45,7 +48,9 @@ class PileServiceImplTest {
         engine = mock(SchedulingEngine.class);
         chargingSessionMapper = mock(ChargingSessionMapper.class);
         carMapper = mock(CarMapper.class);
-        service = new PileServiceImpl(chargingPileMapper, engine, chargingSessionMapper, carMapper);
+        timeProvider = mock(TimeProvider.class);
+        doReturn(NOW).when(timeProvider).now();
+        service = new PileServiceImpl(chargingPileMapper, engine, chargingSessionMapper, carMapper, timeProvider);
     }
 
     @Test
@@ -70,6 +75,7 @@ class PileServiceImplTest {
         ChargingOrder order = createOrder(CAR_ID, BigDecimal.valueOf(30), OrderStatus.CHARGING);
         ChargingPile pile = createPile(PowerState.ON, WorkingState.CHARGING);
         ChargingSession session = createSession(BigDecimal.valueOf(30), BigDecimal.valueOf(10));
+        session.setStartTime(NOW.minusMinutes(40));
         Car car = createCar(CAR_ID, BigDecimal.valueOf(60));
 
         doReturn(pile).when(chargingPileMapper).selectById(PILE_ID);
@@ -81,7 +87,7 @@ class PileServiceImplTest {
         List<PileQueueItem> items = service.getPileQueue(PILE_ID).getData();
         assertEquals(1, items.size());
         assertEquals(CAR_ID, items.get(0).getCarId());
-        assertEquals("00:40:00", items.get(0).getWaitTime()); // (30-10)/30*3600=2400s=40min
+        assertEquals("00:40:00", items.get(0).getWaitTime()); // 已等 40min
         assertEquals(0, items.get(0).getQueuePosition());
         assertEquals(BigDecimal.valueOf(30), items.get(0).getRequestAmount());
         assertEquals(BigDecimal.valueOf(60), items.get(0).getCarCapacity());
@@ -91,9 +97,12 @@ class PileServiceImplTest {
     void shouldReturnMultipleItems_whenQueueHasWaitingCars() {
         ChargingOrder headOrder = createOrder("C001", BigDecimal.valueOf(30), OrderStatus.CHARGING);
         ChargingOrder wait1 = createOrder("C002", BigDecimal.valueOf(20), OrderStatus.CALLED);
+        wait1.setCreatedAt(NOW.minusMinutes(25));
         ChargingOrder wait2 = createOrder("C003", BigDecimal.valueOf(10), OrderStatus.CALLED);
+        wait2.setCreatedAt(NOW.minusMinutes(5));
         ChargingPile pile = createPile(PowerState.ON, WorkingState.CHARGING);
         ChargingSession session = createSession(BigDecimal.valueOf(30), BigDecimal.valueOf(15));
+        session.setStartTime(NOW.minusMinutes(30));
         Car car1 = createCar("C001", BigDecimal.valueOf(60));
         Car car2 = createCar("C002", BigDecimal.valueOf(50));
         Car car3 = createCar("C003", BigDecimal.valueOf(40));
@@ -109,19 +118,16 @@ class PileServiceImplTest {
         List<PileQueueItem> items = service.getPileQueue(PILE_ID).getData();
         assertEquals(3, items.size());
 
-        // position 0 (charging): remaining (30-15)/30*3600=1800s=30min
         assertEquals("C001", items.get(0).getCarId());
-        assertEquals("00:30:00", items.get(0).getWaitTime());
+        assertEquals("00:30:00", items.get(0).getWaitTime()); // 已等 30min
         assertEquals(0, items.get(0).getQueuePosition());
 
-        // position 1: wait 30min
         assertEquals("C002", items.get(1).getCarId());
-        assertEquals("00:30:00", items.get(1).getWaitTime());
+        assertEquals("00:25:00", items.get(1).getWaitTime()); // 已等 25min
         assertEquals(1, items.get(1).getQueuePosition());
 
-        // position 2: 30min + 20/30*3600=30+40=70min
         assertEquals("C003", items.get(2).getCarId());
-        assertEquals("01:10:00", items.get(2).getWaitTime());
+        assertEquals("00:05:00", items.get(2).getWaitTime()); // 已等 5min
         assertEquals(2, items.get(2).getQueuePosition());
     }
 
@@ -159,6 +165,7 @@ class PileServiceImplTest {
     @Test
     void shouldShowWaitingCars_whenHeadIsNull() {
         ChargingOrder wait1 = createOrder("C002", BigDecimal.valueOf(30), OrderStatus.CALLED);
+        wait1.setCreatedAt(NOW.minusMinutes(15));
         ChargingPile pile = createPile(PowerState.ON, WorkingState.CHARGING);
         Car car = createCar("C002", BigDecimal.valueOf(60));
 
@@ -170,8 +177,8 @@ class PileServiceImplTest {
         List<PileQueueItem> items = service.getPileQueue(PILE_ID).getData();
         assertEquals(1, items.size());
         assertEquals("C002", items.get(0).getCarId());
-        assertEquals(0, items.get(0).getQueuePosition()); // starts from 0
-        assertEquals("00:00:00", items.get(0).getWaitTime());
+        assertEquals(0, items.get(0).getQueuePosition());
+        assertEquals("00:15:00", items.get(0).getWaitTime()); // 已等 15min
     }
 
     @Test

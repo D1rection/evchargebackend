@@ -268,7 +268,10 @@ public class SimulationServiceImpl implements SimulationService {
             req.setCarId(e.targetId);
             req.setRequestAmount(BigDecimal.valueOf(e.value));
             req.setRequestMode(e.chargeType.equals("F") ? "FAST" : "SLOW");
-            chargingService.submit(req);
+            var sr = chargingService.submit(req);
+            if ("V6".equals(e.targetId) && sr.getData() != null) {
+                log.warn("V6 submit结果: carState={}, carPosition={}", sr.getData().getCarState(), sr.getData().getCarPosition());
+            }
         } else if (e.value == 0) {
             // 先尝试普通取消（WAITING/CALLED）
             ChargingCancelRequest cancelReq = new ChargingCancelRequest();

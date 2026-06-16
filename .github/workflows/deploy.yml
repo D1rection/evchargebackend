@@ -58,6 +58,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
             export DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            export SEED_FORCE=${{ vars.SEED_FORCE }}
             cd /opt/evcharge
             docker compose pull app
             docker compose up -d

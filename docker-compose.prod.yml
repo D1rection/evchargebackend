@@ -6,6 +6,7 @@ services:
     environment:
       - SPRING_PROFILES_ACTIVE=prod
       - DB_PASSWORD=${DB_PASSWORD}
+      - SEED_FORCE=${SEED_FORCE:-false}
     depends_on:
       db:
         condition: service_healthy

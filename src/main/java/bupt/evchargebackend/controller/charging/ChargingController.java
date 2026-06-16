@@ -2,14 +2,14 @@ package bupt.evchargebackend.controller.charging;
 
 import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.response.Result;
-import bupt.evchargebackend.dto.charging.ChargingRequest;
-import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndResponse;
+import bupt.evchargebackend.dto.charging.ChargingRequest;
+import bupt.evchargebackend.dto.charging.ChargingResponse;
 import bupt.evchargebackend.dto.charging.ChargingStateResponse;
+import bupt.evchargebackend.dto.charging.ModifyResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
-import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.service.charging.ChargingService;
 import jakarta.validation.Valid;
@@ -87,20 +87,30 @@ public class ChargingController {
         return chargingService.cancel(request);
     }
 
+    /**
+     * 修改充电量：更新订单的目标充电量。
+     *
+     * @param request {carId, amount}
+     */
     @PostMapping("/modify-amount")
-    public Result<ChargingOrder> modifyAmount(@RequestBody Map<String, Object> request) {
-        return Result.success(chargingService.modifyAmount(
+    public Result<ModifyResponse> modifyAmount(@RequestBody Map<String, Object> request) {
+        return chargingService.modifyAmount(
                 pickString(request, "carId", "car_Id", "car_id"),
                 pickBigDecimal(request, "amount", "Amount", "targetKwh", "Request_Amount")
-        ));
+        );
     }
 
+    /**
+     * 修改充电模式：快充 ↔ 慢充切换，更新调度。
+     *
+     * @param request {carId, mode}
+     */
     @PostMapping("/modify-mode")
-    public Result<ChargingOrder> modifyMode(@RequestBody Map<String, Object> request) {
-        return Result.success(chargingService.modifyMode(
+    public Result<ModifyResponse> modifyMode(@RequestBody Map<String, Object> request) {
+        return chargingService.modifyMode(
                 pickString(request, "carId", "car_Id", "car_id"),
                 parseRequestMode(pickString(request, "mode", "Mode", "requestMode", "Request_Mode"))
-        ));
+        );
     }
 
     private RequestMode parseRequestMode(String value) {

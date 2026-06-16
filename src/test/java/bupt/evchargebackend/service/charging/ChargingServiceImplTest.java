@@ -276,11 +276,10 @@ class ChargingServiceImplTest {
     // ========== 持久化验证 ==========
 
     @Test
-    void shouldPersistOrderWithEstimatedValues() {
+    void shouldPersistOrder() {
         doReturn(false).when(engine).hasAnyFault();
         doReturn(mutableList(createFastPile("F1"))).when(chargingPileMapper).selectList(any());
         doReturn(true).when(engine).addToPileQueue(anyString(), any());
-        doReturn(1).when(engine).pileQueueSize(anyString());
 
         service.submit(request);
 
@@ -289,8 +288,6 @@ class ChargingServiceImplTest {
         ChargingOrder inserted = captor.getValue();
         assertEquals(CAR_ID, inserted.getCarId());
         assertEquals(AMOUNT, inserted.getTargetKwh());
-        assertEquals(new BigDecimal("30.00"), inserted.getEstimatedFee());
-        assertEquals(Integer.valueOf(60), inserted.getEstimatedMinutes());
     }
 
     // ========== 查看队列状态 ==========

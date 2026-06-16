@@ -9,6 +9,7 @@ import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStateResponse;
+import bupt.evchargebackend.dto.charging.ModifyResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
@@ -140,67 +141,17 @@ public class ChargingServiceImpl implements ChargingService {
         chargingOrderMapper.insert(order);
 
         // 6. 调度
-        String selectedPileId = null;
-        ChargingPile bestPile = null;
-        String waitQueueKey = pileType == PileType.FAST ? "FAST" : "SLOW";
-        if (engine.hasAnyFault()) {
-            engine.enqueueWait(order);
-            insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
-        } else {
-            List<ChargingPile> piles = chargingPileMapper.selectList(
-                    new QueryWrapper<ChargingPile>()
-                            .eq("pile_type", pileType)
-                            .ne("working_state", "FAULT")
-            );
-            if (!piles.isEmpty()) {
-                piles.sort(Comparator.comparingLong(this::totalActiveMinutes));
-                bestPile = piles.getFirst();
-                if (engine.addToPileQueue(bestPile.getPileId(), order)) {
-                    order.setPileId(bestPile.getPileId());
-                    selectedPileId = bestPile.getPileId();
-                    insertQueueEntry("PILE", selectedPileId, order.getOrderId());
-                    if (bestPile.getWorkingState() == WorkingState.AVAILABLE
-                            && bestPile.getCurrentSessionId() == null) {
-                        startCharging(bestPile, order);
-                    } else {
-                        order.setOrderStatus(OrderStatus.CALLED);
-                    }
-                }
-            }
-            if (selectedPileId == null) {
-                engine.enqueueWait(order);
-                insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
-            }
-        }
+        dispatchOrder(order, pileType);
 
-        // 7. 调度后计算预估（含等待时间）
-        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
-        int chargeMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(60)).intValue();
-        int estimatedMinutes = selectedPileId != null
-                ? (int) totalActiveMinutes(bestPile) : chargeMinutes;
-        if (estimatedMinutes < chargeMinutes) estimatedMinutes = chargeMinutes;
-
-        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
-                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
-        );
-        LocalDateTime estimateEnd = timeProvider.now().plusMinutes(estimatedMinutes);
-        FeeResult feeResult = calculateFees(power, amount, timeProvider.now(), estimateEnd, periods);
-        BigDecimal estimatedFee = feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP);
-
-        order.setEstimatedFee(estimatedFee);
-        order.setEstimatedMinutes(estimatedMinutes);
-        chargingOrderMapper.updateById(order);
-
-        // 8. 组装响应
+        // 7. 组装响应
         OrderStatus status = order.getOrderStatus();
         String carPosition = status == OrderStatus.WAITING ? "等候区" : "充电区";
         String carState = status.name().toLowerCase();
         int queueNum;
-        if (order.getOrderStatus() == OrderStatus.CHARGING) {
+        if (status == OrderStatus.CHARGING) {
             queueNum = 0;
-        } else if (selectedPileId != null) {
-            queueNum = engine.pileQueueSize(selectedPileId);
+        } else if (order.getPileId() != null) {
+            queueNum = engine.pileQueueSize(order.getPileId());
         } else {
             queueNum = engine.waitQueueSize(pileType);
         }
@@ -211,8 +162,8 @@ public class ChargingServiceImpl implements ChargingService {
         resp.setCarState(carState);
         resp.setQueueNum(queueNum);
         resp.setRequestTime(requestTime);
-        resp.setEstimatedFee(estimatedFee);
-        resp.setEstimatedMinutes(estimatedMinutes);
+        resp.setEstimatedFee(order.getEstimatedFee());
+        resp.setEstimatedMinutes(order.getEstimatedMinutes());
 
         return Result.success(resp);
     }
@@ -536,8 +487,11 @@ public class ChargingServiceImpl implements ChargingService {
         return Result.success(resp);
     }
 
+    /**
+     * 修改充电量：更新目标电量并重算预估价和时长。队列位置不变。
+     */
     @Override
-    public ChargingOrder modifyAmount(String carId, BigDecimal amount) {
+    public Result<ModifyResponse> modifyAmount(String carId, BigDecimal amount) {
         if (!hasText(carId)) {
             throw new BusinessException("carId is required");
         }
@@ -547,12 +501,40 @@ public class ChargingServiceImpl implements ChargingService {
 
         ChargingOrder order = requireModifiableOrder(carId);
         order.setTargetKwh(amount);
+
+        // 重算预估
+        PileType pileType = order.getRequestMode() == RequestMode.FAST ? PileType.FAST : PileType.SLOW;
+        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
+        int chargeMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(60)).intValue();
+        int estimatedMinutes;
+        if (order.getPileId() != null) {
+            ChargingPile pile = chargingPileMapper.selectById(order.getPileId());
+            estimatedMinutes = pile != null ? (int) totalActiveMinutes(pile) : chargeMinutes;
+        } else {
+            estimatedMinutes = chargeMinutes;
+        }
+        if (estimatedMinutes < chargeMinutes) estimatedMinutes = chargeMinutes;
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+        LocalDateTime estimateEnd = timeProvider.now().plusMinutes(estimatedMinutes);
+        FeeResult feeResult = calculateFees(power, amount, timeProvider.now(), estimateEnd, periods);
+        order.setEstimatedFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+        order.setEstimatedMinutes(estimatedMinutes);
         chargingOrderMapper.updateById(order);
-        return order;
+
+        ModifyResponse resp = new ModifyResponse();
+        resp.setResult(1);
+        return Result.success(resp);
     }
 
+    /**
+     * 修改充电模式：移出当前队列 → 切换模式 → 重新调度 → 原桩补位。
+     */
     @Override
-    public ChargingOrder modifyMode(String carId, RequestMode requestMode) {
+    public Result<ModifyResponse> modifyMode(String carId, RequestMode requestMode) {
         if (!hasText(carId)) {
             throw new BusinessException("carId is required");
         }
@@ -561,9 +543,38 @@ public class ChargingServiceImpl implements ChargingService {
         }
 
         ChargingOrder order = requireModifiableOrder(carId);
+        if (order.getRequestMode() == requestMode) {
+            ModifyResponse resp = new ModifyResponse();
+            resp.setResult(1);
+            return Result.success(resp);
+        }
+
+        // 从当前队列移除
+        String oldPileId = order.getPileId();
+        if (order.getOrderStatus() == OrderStatus.WAITING) {
+            engine.removeFromWait(carId);
+        } else {
+            engine.removeFromAllPileQueues(carId);
+        }
+        queueEntryMapper.delete(new QueryWrapper<QueueEntry>().eq("order_id", order.getOrderId()));
+
+        // 更新模式并重新调度
         order.setRequestMode(requestMode);
-        chargingOrderMapper.updateById(order);
-        return order;
+        PileType pileType = requestMode == RequestMode.FAST ? PileType.FAST : PileType.SLOW;
+        dispatchOrder(order, pileType);
+
+        // 如果之前排在桩队列，尝试让原桩从等候区补位
+        if (oldPileId != null) {
+            ChargingPile oldPile = chargingPileMapper.selectById(oldPileId);
+            if (oldPile != null) {
+                tryFillFromWaiting(oldPileId, oldPile.getPileType());
+                tryAutoStartNextCar(oldPileId);
+            }
+        }
+
+        ModifyResponse resp = new ModifyResponse();
+        resp.setResult(1);
+        return Result.success(resp);
     }
 
     private ChargingOrder requireModifiableOrder(String carId) {
@@ -652,6 +663,61 @@ public class ChargingServiceImpl implements ChargingService {
         order.setOrderStatus(OrderStatus.CHARGING);
         chargingOrderMapper.updateById(order);
         engine.setCharging(pile.getPileId(), order);
+    }
+
+    /** 调度：查同类型桩 → 有空位入桩队列（空闲则 auto-start）→ 否则入等候区，同时计算预估。 */
+    private void dispatchOrder(ChargingOrder order, PileType pileType) {
+        String waitQueueKey = pileType == PileType.FAST ? "FAST" : "SLOW";
+        String selectedPileId = null;
+        ChargingPile bestPile = null;
+
+        if (engine.hasAnyFault()) {
+            engine.enqueueWait(order);
+            insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
+        } else {
+            List<ChargingPile> piles = chargingPileMapper.selectList(
+                    new QueryWrapper<ChargingPile>()
+                            .eq("pile_type", pileType)
+                            .in("working_state", WorkingState.AVAILABLE, WorkingState.CHARGING)
+            );
+            if (!piles.isEmpty()) {
+                piles.sort(Comparator.comparingLong(this::totalActiveMinutes));
+                bestPile = piles.getFirst();
+                if (engine.addToPileQueue(bestPile.getPileId(), order)) {
+                    order.setPileId(bestPile.getPileId());
+                    selectedPileId = bestPile.getPileId();
+                    insertQueueEntry("PILE", selectedPileId, order.getOrderId());
+                    if (bestPile.getWorkingState() == WorkingState.AVAILABLE
+                            && bestPile.getCurrentSessionId() == null) {
+                        startCharging(bestPile, order);
+                    } else {
+                        order.setOrderStatus(OrderStatus.CALLED);
+                    }
+                }
+            }
+            if (selectedPileId == null) {
+                engine.enqueueWait(order);
+                insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
+            }
+        }
+
+        // 计算预估
+        BigDecimal amount = order.getTargetKwh();
+        BigDecimal power = BigDecimal.valueOf(pileType == PileType.FAST ? 30 : 10);
+        int chargeMinutes = amount.divide(power, 2, RoundingMode.HALF_UP)
+                .multiply(BigDecimal.valueOf(60)).intValue();
+        int estimatedMinutes = selectedPileId != null
+                ? (int) totalActiveMinutes(bestPile) : chargeMinutes;
+        if (estimatedMinutes < chargeMinutes) estimatedMinutes = chargeMinutes;
+
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
+        );
+        LocalDateTime estimateEnd = timeProvider.now().plusMinutes(estimatedMinutes);
+        FeeResult feeResult = calculateFees(power, amount, timeProvider.now(), estimateEnd, periods);
+        order.setEstimatedFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
+        order.setEstimatedMinutes(estimatedMinutes);
+        chargingOrderMapper.updateById(order);
     }
 
     /** 桩释放后尝试从等候区补位：查 queue_entry 找等候区最早车辆，改订单状态并同步。 */

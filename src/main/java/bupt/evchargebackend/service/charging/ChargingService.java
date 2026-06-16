@@ -7,8 +7,8 @@ import bupt.evchargebackend.dto.charging.ChargingCancelRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndRequest;
 import bupt.evchargebackend.dto.charging.ChargingEndResponse;
 import bupt.evchargebackend.dto.charging.ChargingStateResponse;
+import bupt.evchargebackend.dto.charging.ModifyResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
-import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 
 import java.math.BigDecimal;
@@ -49,7 +49,13 @@ public interface ChargingService {
      */
     Result<ChargingEndResponse> cancel(ChargingCancelRequest request);
 
-    ChargingOrder modifyAmount(String carId, BigDecimal amount);
+    /**
+     * 修改充电量：更新订单的目标充电量并重算预估费用和时长。
+     */
+    Result<ModifyResponse> modifyAmount(String carId, BigDecimal amount);
 
-    ChargingOrder modifyMode(String carId, RequestMode requestMode);
+    /**
+     * 修改充电模式：将订单从当前队列移除，更新模式后重新调度。
+     */
+    Result<ModifyResponse> modifyMode(String carId, RequestMode requestMode);
 }

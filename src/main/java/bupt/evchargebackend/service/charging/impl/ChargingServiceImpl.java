@@ -724,10 +724,23 @@ public class ChargingServiceImpl implements ChargingService {
         chargingOrderMapper.updateById(order);
     }
 
-    /** 桩释放后尝试从等候区补位：查 queue_entry 找等候区最早车辆，改订单状态并同步。 */
+    /** 桩释放后补位：先试故障队列，再试等候区。 */
     private void tryFillFromWaiting(String pileId, PileType pileType) {
-        if (engine.hasAnyFault()) return;
         if (engine.pileQueueSize(pileId) >= 3) return;
+
+        // 优先从故障队列取车
+        if (engine.hasFaults(pileType)) {
+            ChargingOrder faultOrder = engine.pollFault(pileType);
+            if (faultOrder != null) {
+                if (engine.addToPileQueue(pileId, faultOrder)) {
+                    faultOrder.setOrderStatus(OrderStatus.CALLED);
+                    faultOrder.setPileId(pileId);
+                    chargingOrderMapper.updateById(faultOrder);
+                    insertQueueEntry("PILE", pileId, faultOrder.getOrderId());
+                }
+                return;
+            }
+        }
 
         String waitKey = pileType == PileType.FAST ? "FAST" : "SLOW";
         QueueEntry qe = queueEntryMapper.selectOne(

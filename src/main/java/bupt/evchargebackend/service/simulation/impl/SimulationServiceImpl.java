@@ -143,11 +143,15 @@ public class SimulationServiceImpl implements SimulationService {
             // 桩队列 (position 0 已由上面处理, 这里只列等待)
             List<Map<String, Object>> queue = new ArrayList<>();
             for (var o : engine.getPileQueue(pile.getPileId())) {
-                Map<String, Object> q = new LinkedHashMap<>();
-                q.put("carId", o.getCarId());
-                q.put("requestAmount", o.getTargetKwh());
-                q.put("requestMode", o.getRequestMode().name());
-                queue.add(q);
+                queue.add(queueItem(o));
+            }
+            // 故障桩显示同类型故障队列车辆
+            if (pile.getWorkingState() == WorkingState.FAULT) {
+                var faultQ = pile.getPileType() == PileType.FAST
+                        ? engine.getFastFaultQueue() : engine.getSlowFaultQueue();
+                for (var o : faultQ) {
+                    queue.add(queueItem(o));
+                }
             }
             p.put("queue", queue);
             piles.put(pile.getPileId(), p);

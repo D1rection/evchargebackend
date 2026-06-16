@@ -234,6 +234,9 @@ public class SimulationServiceImpl implements SimulationService {
             var submitResult = chargingService.submit(req);
             if (submitResult.getCode() != 200) {
                 log.warn("提交失败 {}: {}", e.targetId, submitResult.getMsg());
+            } else if (submitResult.getData() != null) {
+                log.info("提交结果 {}: carState={}", e.targetId,
+                        submitResult.getData().getCarState());
             }
         } else if (e.value == 0) {
             // 先尝试普通取消（WAITING/CALLED）

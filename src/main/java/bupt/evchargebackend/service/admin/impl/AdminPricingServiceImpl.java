@@ -3,6 +3,7 @@ package bupt.evchargebackend.service.admin.impl;
 import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.PricingRuleRequest;
+import bupt.evchargebackend.dto.PricingRuleRequest.PeriodConfig;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pricing.BillingRatePeriod;
 import bupt.evchargebackend.entity.pricing.enums.PeriodName;
@@ -10,6 +11,7 @@ import bupt.evchargebackend.mapper.pricing.BillingRatePeriodMapper;
 import bupt.evchargebackend.service.admin.AdminPricingService;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.*;
@@ -37,30 +39,23 @@ public class AdminPricingServiceImpl implements AdminPricingService {
         for (PileType type : PileType.values()) {
             List<BillingRatePeriod> list = grouped.getOrDefault(type, List.of());
             Map<String, Object> typeData = new LinkedHashMap<>();
+
+            // 时段列表
+            List<Map<String, Object>> periodList = new ArrayList<>();
             double serviceFeeValue = 0.0;
 
             for (BillingRatePeriod p : list) {
                 serviceFeeValue = p.getServicePrice().doubleValue();
-                switch (p.getPeriodName()) {
-                    case PEAK -> {
-                        typeData.put("peakStart", p.getStartTime());
-                        typeData.put("peakEnd", p.getEndTime());
-                        typeData.put("peakPrice", p.getElectricityPrice().doubleValue());
-                    }
-                    case NORMAL -> {
-                        typeData.put("normalStart", p.getStartTime());
-                        typeData.put("normalEnd", p.getEndTime());
-                        typeData.put("normalPrice", p.getElectricityPrice().doubleValue());
-                    }
-                    case VALLEY -> {
-                        typeData.put("valleyStart", p.getStartTime());
-                        typeData.put("valleyEnd", p.getEndTime());
-                        typeData.put("valleyPrice", p.getElectricityPrice().doubleValue());
-                    }
-                }
+                Map<String, Object> periodData = new LinkedHashMap<>();
+                periodData.put("periodName", p.getPeriodName().name());
+                periodData.put("startTime", p.getStartTime());
+                periodData.put("endTime", p.getEndTime());
+                periodData.put("electricityPrice", p.getElectricityPrice().doubleValue());
+                periodList.add(periodData);
             }
 
-            typeData.put("serviceFeeValue", serviceFeeValue);
+            typeData.put("periods", periodList);
+            typeData.put("serviceFee", serviceFeeValue);
             result.put(type.name(), typeData);
         }
 
@@ -68,8 +63,9 @@ public class AdminPricingServiceImpl implements AdminPricingService {
     }
 
     @Override
+    @Transactional
     public Result<Void> setPricingRule(PricingRuleRequest request) {
-        // 校验类型
+        // 1. 校验类型
         PileType pileType;
         try {
             pileType = PileType.valueOf(request.getType().toUpperCase());
@@ -77,70 +73,119 @@ public class AdminPricingServiceImpl implements AdminPricingService {
             throw new BusinessException(400, "充电桩类型无效，必须为 FAST 或 SLOW");
         }
 
-        // 加载该类型已有数据
-        List<BillingRatePeriod> existing = billingRatePeriodMapper.selectList(
-                new LambdaQueryWrapper<BillingRatePeriod>()
-                        .eq(BillingRatePeriod::getPileType, pileType));
-        Map<PeriodName, BillingRatePeriod> existingMap = new LinkedHashMap<>();
-        for (BillingRatePeriod p : existing) {
-            existingMap.put(p.getPeriodName(), p);
+        List<PeriodConfig> configs = request.getPeriods();
+        if (configs == null || configs.isEmpty()) {
+            throw new BusinessException(400, "时段列表不能为空");
         }
 
-        // 处理三个时段：全传则更新/新增，全不传则保留原值
-        processPeriod(pileType, PeriodName.PEAK,
-                request.getPeakStart(), request.getPeakEnd(), request.getPeakPrice(),
-                request.getServiceFeeRate(), existingMap);
-        processPeriod(pileType, PeriodName.NORMAL,
-                request.getNormalStart(), request.getNormalEnd(), request.getNormalPrice(),
-                request.getServiceFeeRate(), existingMap);
-        processPeriod(pileType, PeriodName.VALLEY,
-                request.getValleyStart(), request.getValleyEnd(), request.getValleyPrice(),
-                request.getServiceFeeRate(), existingMap);
-
-        // 仅更新 serviceFeeRate：已存在但本次未重设的时段
-        if (request.getServiceFeeRate() != null) {
-            for (BillingRatePeriod p : existing) {
-                if (p.getPileType() == pileType) {
-                    p.setServicePrice(BigDecimal.valueOf(request.getServiceFeeRate()));
-                    billingRatePeriodMapper.updateById(p);
-                }
+        // 2. 校验每个时段字段完整 + periodName 合法
+        for (int i = 0; i < configs.size(); i++) {
+            PeriodConfig c = configs.get(i);
+            if (isBlank(c.getPeriodName())) {
+                throw new BusinessException(400, "第" + (i + 1) + "个时段 periodName 不能为空");
             }
+            try {
+                PeriodName.valueOf(c.getPeriodName().toUpperCase());
+            } catch (IllegalArgumentException e) {
+                throw new BusinessException(400,
+                        "第" + (i + 1) + "个时段 periodName 无效，必须为 PEAK / NORMAL / VALLEY");
+            }
+            if (isBlank(c.getStartTime()) || isBlank(c.getEndTime())) {
+                throw new BusinessException(400,
+                        "第" + (i + 1) + "个时段 startTime 和 endTime 不能为空");
+            }
+            if (!c.getStartTime().matches("\\d{2}:\\d{2}") || !c.getEndTime().matches("\\d{2}:\\d{2}")) {
+                throw new BusinessException(400,
+                        "第" + (i + 1) + "个时段时间格式必须为 HH:mm");
+            }
+            if (c.getElectricityPrice() == null || c.getElectricityPrice() <= 0) {
+                throw new BusinessException(400,
+                        "第" + (i + 1) + "个时段 electricityPrice 必须大于 0");
+            }
+        }
+
+        // 3. 时段重叠检测
+        validateNoOverlap(configs);
+
+        // 4. 覆盖式更新：先删后插
+        billingRatePeriodMapper.delete(
+                new LambdaQueryWrapper<BillingRatePeriod>()
+                        .eq(BillingRatePeriod::getPileType, pileType));
+
+        double serviceFee = request.getServiceFeeRate() != null ? request.getServiceFeeRate() : 0.0;
+
+        for (PeriodConfig c : configs) {
+            BillingRatePeriod period = new BillingRatePeriod();
+            period.setPeriodId(UUID.randomUUID().toString());
+            period.setPileType(pileType);
+            period.setPeriodName(PeriodName.valueOf(c.getPeriodName().toUpperCase()));
+            period.setStartTime(c.getStartTime());
+            period.setEndTime(c.getEndTime());
+            period.setElectricityPrice(BigDecimal.valueOf(c.getElectricityPrice()));
+            period.setServicePrice(BigDecimal.valueOf(serviceFee));
+            billingRatePeriodMapper.insert(period);
         }
 
         return Result.success();
     }
 
-    /** 处理单个时段：全传则插入/更新，全不传则保留，部分传报错。 */
-    private void processPeriod(PileType pileType, PeriodName name,
-                               String start, String end, Double price,
-                               Double serviceFeeRate,
-                               Map<PeriodName, BillingRatePeriod> existingMap) {
-        boolean hasStart = !isBlank(start);
-        boolean hasEnd = !isBlank(end);
-        boolean hasPrice = price != null;
+    /**
+     * 检测时段列表是否存在重叠（含跨午夜场景）。
+     * 使用半开区间 [start, end)，相邻时段如 10:00 结束和 10:00 开始不视为重叠。
+     */
+    static void validateNoOverlap(List<PeriodConfig> configs) {
+        for (int i = 0; i < configs.size(); i++) {
+            for (int j = i + 1; j < configs.size(); j++) {
+                if (overlaps(configs.get(i), configs.get(j))) {
+                    PeriodConfig a = configs.get(i);
+                    PeriodConfig b = configs.get(j);
+                    throw new BusinessException(400,
+                            String.format("时段冲突：%s %s-%s 与 %s %s-%s 存在重叠",
+                                    a.getPeriodName(), a.getStartTime(), a.getEndTime(),
+                                    b.getPeriodName(), b.getStartTime(), b.getEndTime()));
+                }
+            }
+        }
+    }
 
-        if (!hasStart && !hasEnd && !hasPrice) {
-            return; // 不传则保留原值
-        }
-        if (!hasStart || !hasEnd || !hasPrice) {
-            throw new BusinessException(400,
-                    name + " 时段的 start、end、price 需同时提供或同时省略");
+    /**
+     * 判断两个时段是否重叠。
+     *
+     * @param a 时段A
+     * @param b 时段B
+     * @return true 表示存在重叠
+     */
+    static boolean overlaps(PeriodConfig a, PeriodConfig b) {
+        int s1 = parseMinutes(a.getStartTime());
+        int e1 = parseMinutes(a.getEndTime());
+        int s2 = parseMinutes(b.getStartTime());
+        int e2 = parseMinutes(b.getEndTime());
+
+        boolean aCross = s1 >= e1; // 跨午夜
+        boolean bCross = s2 >= e2;
+
+        if (aCross && bCross) {
+            // 两者都跨午夜，必然有重叠（都覆盖了午夜附近）
+            return true;
         }
 
-        BillingRatePeriod period = existingMap.get(name);
-        if (period == null) {
-            period = new BillingRatePeriod();
-            period.setPeriodId(UUID.randomUUID().toString());
-            period.setPileType(pileType);
-            period.setPeriodName(name);
+        if (aCross) {
+            // A跨午夜 = [s1, 1440) ∪ [0, e1)，B不跨午夜 = [s2, e2)
+            return s1 < e2 || s2 < e1;
         }
-        period.setStartTime(start);
-        period.setEndTime(end);
-        period.setElectricityPrice(BigDecimal.valueOf(price));
-        if (serviceFeeRate != null) {
-            period.setServicePrice(BigDecimal.valueOf(serviceFeeRate));
+
+        if (bCross) {
+            // B跨午夜，A不跨午夜
+            return s2 < e1 || s1 < e2;
         }
-        billingRatePeriodMapper.insertOrUpdate(period);
+
+        // 都不跨午夜：标准半开区间重叠判断
+        return s1 < e2 && s2 < e1;
+    }
+
+    private static int parseMinutes(String time) {
+        String[] parts = time.split(":");
+        return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
     }
 
     private boolean isBlank(String s) {

@@ -155,15 +155,19 @@ public class DataSeeder implements CommandLineRunner {
     }
 
     private void initPricing() {
-        // 快充分时电价
-        addRate(PileType.FAST, PeriodName.PEAK, "08:00", "15:00", "1.2", "0.3");
-        addRate(PileType.FAST, PeriodName.NORMAL, "15:00", "22:00", "0.9", "0.3");
-        addRate(PileType.FAST, PeriodName.VALLEY, "22:00", "08:00", "0.5", "0.3");
+        // 快充分时电价 — 峰时两个不连续窗口: 08:00-10:00, 19:00-21:00
+        addRate(PileType.FAST, PeriodName.PEAK,   "08:00", "10:00", "1.5", "0.8");
+        addRate(PileType.FAST, PeriodName.NORMAL, "10:00", "19:00", "1.0", "0.8");
+        addRate(PileType.FAST, PeriodName.PEAK,   "19:00", "21:00", "1.5", "0.8");
+        addRate(PileType.FAST, PeriodName.NORMAL, "21:00", "00:00", "1.0", "0.8");
+        addRate(PileType.FAST, PeriodName.VALLEY, "00:00", "08:00", "0.6", "0.8");
 
-        // 慢充分时电价
-        addRate(PileType.SLOW, PeriodName.PEAK, "08:00", "15:00", "1.0", "0.2");
-        addRate(PileType.SLOW, PeriodName.NORMAL, "15:00", "22:00", "0.8", "0.2");
-        addRate(PileType.SLOW, PeriodName.VALLEY, "22:00", "08:00", "0.4", "0.2");
+        // 慢充分时电价 — 峰时两个不连续窗口: 08:00-10:00, 19:00-21:00
+        addRate(PileType.SLOW, PeriodName.PEAK,   "08:00", "10:00", "1.2", "0.6");
+        addRate(PileType.SLOW, PeriodName.NORMAL, "10:00", "19:00", "0.8", "0.6");
+        addRate(PileType.SLOW, PeriodName.PEAK,   "19:00", "21:00", "1.2", "0.6");
+        addRate(PileType.SLOW, PeriodName.NORMAL, "21:00", "00:00", "0.8", "0.6");
+        addRate(PileType.SLOW, PeriodName.VALLEY, "00:00", "08:00", "0.5", "0.6");
     }
 
     private void addRate(PileType pileType, PeriodName name, String start, String end,

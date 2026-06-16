@@ -53,4 +53,22 @@ public class PileController {
     public Result<List<PileQueueItem>> getPileQueue(@PathVariable String pileId) {
         return pileService.getPileQueue(pileId);
     }
+
+    /**
+     * 触发桩故障：中断充电，排队车移入故障队列。
+     */
+    @PostMapping("/{pileId}/fault")
+    public Result<Void> fault(@PathVariable String pileId) {
+        pileService.triggerFault(pileId);
+        return Result.success();
+    }
+
+    /**
+     * 恢复桩：重新可用，优先分发故障队列车辆。
+     */
+    @PostMapping("/{pileId}/recover")
+    public Result<Void> recover(@PathVariable String pileId) {
+        pileService.recoverFault(pileId);
+        return Result.success();
+    }
 }

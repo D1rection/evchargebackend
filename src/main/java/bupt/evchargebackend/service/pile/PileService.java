@@ -23,4 +23,10 @@ public interface PileService {
     ChargingPile powerOff(String pileId);
 
     ChargingPile start(String pileId);
+
+    /** 触发桩故障：中断充电（如有）、移入故障队列、设置 FAULT 状态。 */
+    void triggerFault(String pileId);
+
+    /** 恢复桩：设置 AVAILABLE、更新故障记录、分发故障队列。 */
+    void recoverFault(String pileId);
 }

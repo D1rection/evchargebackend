@@ -186,6 +186,8 @@ public class SchedulingEngine {
 
     public java.util.Queue<ChargingOrder> getFastWaitQueue() { return fastWaitQueue; }
     public java.util.Queue<ChargingOrder> getSlowWaitQueue() { return slowWaitQueue; }
+    public java.util.Queue<ChargingOrder> getFastFaultQueue() { return fastFaultQueue; }
+    public java.util.Queue<ChargingOrder> getSlowFaultQueue() { return slowFaultQueue; }
     /** 设置是否抑制 fillSlot 从等候区分发（边界步进有故障时暂缓）。 */
     public void setDeferWaitDispatch(boolean v) { this.deferWaitDispatch = v; }
 

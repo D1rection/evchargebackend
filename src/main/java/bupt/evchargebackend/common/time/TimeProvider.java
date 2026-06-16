@@ -12,4 +12,7 @@ public interface TimeProvider {
 
     /** 返回当前时间。 */
     LocalDateTime now();
+
+    /** 当前是否为模拟时间模式（默认 false）。 */
+    default boolean isSimulating() { return false; }
 }

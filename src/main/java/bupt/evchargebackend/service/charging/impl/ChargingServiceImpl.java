@@ -465,6 +465,7 @@ public class ChargingServiceImpl implements ChargingService {
         } else {
             engine.removeFromAllPileQueues(carId);
         }
+        engine.removeFromFaultQueues(carId);
         queueEntryMapper.delete(
                 new QueryWrapper<QueueEntry>().eq("order_id", orderId)
         );
@@ -651,14 +652,16 @@ public class ChargingServiceImpl implements ChargingService {
         pile.setCurrentSessionId(session.getSessionId());
         chargingSessionMapper.insert(session);
 
-        // 预约充满自动结束
-        BigDecimal powerKw = BigDecimal.valueOf(pile.getPowerKw());
-        long delayMs = order.getTargetKwh()
-                .divide(powerKw, 10, RoundingMode.HALF_UP)
-                .multiply(BigDecimal.valueOf(3600_000))
-                .longValue();
-        String sid = session.getSessionId();
-        scheduler.schedule(() -> autoFinish(sid), delayMs, TimeUnit.MILLISECONDS);
+        // 预约充满自动结束（模拟模式下由 SimulationService 推进）
+        if (!timeProvider.isSimulating()) {
+            BigDecimal powerKw = BigDecimal.valueOf(pile.getPowerKw());
+            long delayMs = order.getTargetKwh()
+                    .divide(powerKw, 10, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(3600_000))
+                    .longValue();
+            String sid = session.getSessionId();
+            scheduler.schedule(() -> autoFinish(sid), delayMs, TimeUnit.MILLISECONDS);
+        }
 
         order.setOrderStatus(OrderStatus.CHARGING);
         chargingOrderMapper.updateById(order);
@@ -764,7 +767,8 @@ public class ChargingServiceImpl implements ChargingService {
         }
     }
 
-    private void autoFinish(String sessionId) {
+    @Override
+    public void autoFinish(String sessionId) {
         ChargingSession session = chargingSessionMapper.selectById(sessionId);
         if (session == null || session.getSessionStatus() != SessionStatus.CHARGING) return;
 
@@ -825,6 +829,30 @@ public class ChargingServiceImpl implements ChargingService {
         chargingPileMapper.updateById(pile);
 
         tryAutoStartNextCar(pile.getPileId());
+    }
+
+    @Override
+    public void distributeFaultQueue(PileType pileType) {
+        while (engine.hasFaults(pileType)) {
+            ChargingPile available = chargingPileMapper.selectList(
+                    new QueryWrapper<ChargingPile>()
+                            .eq("pile_type", pileType)
+                            .eq("working_state", WorkingState.AVAILABLE)
+                            .last("LIMIT 1")
+            ).stream().findFirst().orElse(null);
+            if (available == null) break;
+            ChargingOrder order = engine.pollFault(pileType);
+            if (order == null) break;
+            engine.addToPileQueue(available.getPileId(), order);
+            insertQueueEntry("PILE", available.getPileId(), order.getOrderId());
+            if (available.getWorkingState() == WorkingState.AVAILABLE
+                    && available.getCurrentSessionId() == null) {
+                startCharging(available, order);
+            } else {
+                order.setOrderStatus(OrderStatus.CALLED);
+                chargingOrderMapper.updateById(order);
+            }
+        }
     }
 
     private void insertQueueEntry(String queueType, String queueKey, String orderId) {

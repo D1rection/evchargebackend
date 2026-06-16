@@ -6,26 +6,32 @@ import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.pile.PileQueueItem;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
+import bupt.evchargebackend.entity.charging.enums.OrderStatus;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
 import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
 import bupt.evchargebackend.entity.user.Car;
+import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.user.CarMapper;
 import bupt.evchargebackend.service.pile.PileService;
 import bupt.evchargebackend.common.time.TimeProvider;
+import bupt.evchargebackend.entity.fault.FaultRecord;
+import bupt.evchargebackend.entity.fault.enums.FaultStatus;
+import bupt.evchargebackend.mapper.fault.FaultRecordMapper;
+import bupt.evchargebackend.service.charging.ChargingService;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Service;
 
-import java.math.BigDecimal;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class PileServiceImpl implements PileService {
@@ -35,17 +41,26 @@ public class PileServiceImpl implements PileService {
     private final ChargingSessionMapper chargingSessionMapper;
     private final CarMapper carMapper;
     private final TimeProvider timeProvider;
+    private final FaultRecordMapper faultRecordMapper;
+    private final ChargingService chargingService;
+    private final ChargingOrderMapper chargingOrderMapper;
 
     public PileServiceImpl(ChargingPileMapper chargingPileMapper,
                            SchedulingEngine engine,
                            ChargingSessionMapper chargingSessionMapper,
                            CarMapper carMapper,
-                           TimeProvider timeProvider) {
+                           TimeProvider timeProvider,
+                           FaultRecordMapper faultRecordMapper,
+                           ChargingService chargingService,
+                           ChargingOrderMapper chargingOrderMapper) {
         this.chargingPileMapper = chargingPileMapper;
         this.engine = engine;
         this.chargingSessionMapper = chargingSessionMapper;
         this.carMapper = carMapper;
         this.timeProvider = timeProvider;
+        this.faultRecordMapper = faultRecordMapper;
+        this.chargingService = chargingService;
+        this.chargingOrderMapper = chargingOrderMapper;
     }
 
     @Override
@@ -105,6 +120,64 @@ public class PileServiceImpl implements PileService {
         pile.setWorkingState(WorkingState.AVAILABLE);
         chargingPileMapper.updateById(pile);
         return pile;
+    }
+
+    @Override
+    public void triggerFault(String pileId) {
+        ChargingPile pile = requirePile(pileId);
+        if (pile.getWorkingState() == WorkingState.FAULT) return;
+
+        // 中断当前充电
+        if (pile.getCurrentSessionId() != null) {
+            ChargingSession session = chargingSessionMapper.selectById(pile.getCurrentSessionId());
+            if (session != null && session.getSessionStatus() == SessionStatus.CHARGING) {
+                session.setSessionStatus(SessionStatus.INTERRUPTED);
+                session.setEndTime(timeProvider.now());
+                chargingSessionMapper.updateById(session);
+                // 将充电中的订单放入故障队列
+                ChargingOrder order = chargingOrderMapper.selectById(session.getOrderId());
+                if (order != null && order.getOrderStatus() == OrderStatus.CHARGING) {
+                    order.setOrderStatus(OrderStatus.CALLED);
+                    chargingOrderMapper.updateById(order);
+                    engine.enqueueFault(order);
+                }
+            }
+        }
+
+        engine.onPileFaulted(pileId, pile.getPileType());
+
+        pile.setWorkingState(WorkingState.FAULT);
+        chargingPileMapper.updateById(pile);
+
+        FaultRecord record = new FaultRecord();
+        record.setFaultId(UUID.randomUUID().toString());
+        record.setPileId(pileId);
+        record.setFaultTime(timeProvider.now());
+        record.setFaultStatus(FaultStatus.ACTIVE);
+        faultRecordMapper.insert(record);
+    }
+
+    @Override
+    public void recoverFault(String pileId) {
+        ChargingPile pile = requirePile(pileId);
+        if (pile.getWorkingState() != WorkingState.FAULT) return;
+
+        pile.setWorkingState(WorkingState.AVAILABLE);
+        chargingPileMapper.updateById(pile);
+
+        FaultRecord record = faultRecordMapper.selectOne(
+                new QueryWrapper<FaultRecord>()
+                        .eq("pile_id", pileId)
+                        .eq("fault_status", FaultStatus.ACTIVE)
+                        .orderByDesc("created_at").last("LIMIT 1")
+        );
+        if (record != null) {
+            record.setFaultStatus(FaultStatus.RECOVERED);
+            record.setRecoverTime(timeProvider.now());
+            faultRecordMapper.updateById(record);
+        }
+
+        chargingService.distributeFaultQueue(pile.getPileType());
     }
 
     @Override

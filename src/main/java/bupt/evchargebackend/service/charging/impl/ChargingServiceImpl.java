@@ -650,6 +650,7 @@ public class ChargingServiceImpl implements ChargingService {
         session.setSessionStatus(SessionStatus.CHARGING);
         session.setStartTime(timeProvider.now());
         pile.setCurrentSessionId(session.getSessionId());
+        chargingPileMapper.updateById(pile);
         chargingSessionMapper.insert(session);
 
         // 预约充满自动结束（模拟模式下由 SimulationService 推进）

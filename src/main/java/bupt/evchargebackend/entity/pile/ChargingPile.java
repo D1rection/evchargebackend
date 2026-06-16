@@ -3,7 +3,11 @@ package bupt.evchargebackend.entity.pile;
 import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
-import com.baomidou.mybatisplus.annotation.*;
+import com.baomidou.mybatisplus.annotation.FieldFill;
+import com.baomidou.mybatisplus.annotation.FieldStrategy;
+import com.baomidou.mybatisplus.annotation.TableField;
+import com.baomidou.mybatisplus.annotation.TableId;
+import com.baomidou.mybatisplus.annotation.TableName;
 import lombok.Data;
 
 import java.math.BigDecimal;
@@ -39,6 +43,7 @@ public class ChargingPile {
     private WorkingState workingState;
 
     /** 当前充电会话ID */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private String currentSessionId;
 
     /** 历史累计充电量（kWh） */

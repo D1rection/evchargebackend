@@ -32,10 +32,8 @@ import bupt.evchargebackend.mapper.user.CarMapper;
 import bupt.evchargebackend.mapper.user.UserAccountMapper;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
 import cn.hutool.crypto.digest.BCrypt;
-import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.stereotype.Component;
 
@@ -65,9 +63,6 @@ public class DataSeeder implements CommandLineRunner {
     private final QueueEntryMapper queueEntryMapper;
     private final SchedulingEngine engine;
 
-    @Value("${seed.force:false}")
-    private boolean force;
-
     public DataSeeder(DataSource dataSource, UserAccountMapper userAccountMapper, CarMapper carMapper,
                       ChargingPileMapper chargingPileMapper,
                       StationConfigMapper stationConfigMapper,
@@ -92,17 +87,9 @@ public class DataSeeder implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (force) {
-            log.warn("seed.force=true，清空所有表数据");
-            truncateAll();
-            engine.rebuild(List.of(), List.of(), List.of(), List.of(), Map.of());
-        } else {
-            Long count = userAccountMapper.selectCount(new QueryWrapper<>());
-            if (count != null && count > 0) {
-                log.info("数据库已有数据，跳过 seed（如需强制重置设置 seed.force=true）");
-                return;
-            }
-        }
+        log.warn("清空所有表数据并重新写入调试数据");
+        truncateAll();
+        engine.rebuild(List.of(), List.of(), List.of(), List.of(), Map.of());
 
         LocalDateTime now = LocalDateTime.now();
         log.info("===== 开始写入调试数据 =====");

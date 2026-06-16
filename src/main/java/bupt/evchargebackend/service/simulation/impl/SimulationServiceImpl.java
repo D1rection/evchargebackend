@@ -126,7 +126,7 @@ public class SimulationServiceImpl implements SimulationService {
                     p.put("chargedKwh", s.getChargedKwh());
                     p.put("requestAmount", s.getTargetKwh());
                     BigDecimal charged = s.getChargedKwh() != null ? s.getChargedKwh() : BigDecimal.ZERO;
-                    p.put("currentFee", calculateCurrentFee(charged, pile.getPileType()));
+                    p.put("currentFee", calculateCurrentFee(charged, pile, s.getStartTime()));
                 }
             } else {
                 p.put("carId", null);
@@ -187,27 +187,64 @@ public class SimulationServiceImpl implements SimulationService {
         return item;
     }
 
-    /** 按当前时刻电价算已充电量的费用。 */
-    private BigDecimal calculateCurrentFee(BigDecimal chargedKwh, PileType pileType) {
-        if (chargedKwh == null || chargedKwh.compareTo(BigDecimal.ZERO) <= 0) {
+    /** 按分时电价分段计算从 startTime 到 now 的充电费用。 */
+    private BigDecimal calculateCurrentFee(BigDecimal chargedKwh, ChargingPile pile, LocalDateTime startTime) {
+        if (chargedKwh == null || chargedKwh.compareTo(BigDecimal.ZERO) <= 0 || startTime == null) {
             return BigDecimal.ZERO;
         }
-        int minute = timeProvider.now().getHour() * 60 + timeProvider.now().getMinute();
-        BillingRatePeriod period = billingRatePeriodMapper.selectList(
-                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pileType)
-        ).stream().filter(p -> {
-            int s = parseMinute(p.getStartTime());
-            int e = parseMinute(p.getEndTime());
-            return s <= e ? (minute >= s && minute < e) : (minute >= s || minute < e);
-        }).findFirst().orElse(null);
-        if (period == null) return BigDecimal.ZERO;
-        return chargedKwh.multiply(period.getElectricityPrice().add(period.getServicePrice()))
-                .setScale(2, RoundingMode.HALF_UP);
+        LocalDateTime now = timeProvider.now();
+        List<BillingRatePeriod> periods = billingRatePeriodMapper.selectList(
+                new QueryWrapper<BillingRatePeriod>().eq("pile_type", pile.getPileType())
+        );
+        BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
+        BigDecimal chargeFee = BigDecimal.ZERO;
+        BigDecimal serviceFee = BigDecimal.ZERO;
+        BigDecimal totalKwh = BigDecimal.ZERO;
+        LocalDateTime cursor = startTime;
+
+        while (cursor.isBefore(now) && totalKwh.compareTo(chargedKwh) < 0) {
+            int cm = cursor.getHour() * 60 + cursor.getMinute();
+            BillingRatePeriod period = findPeriod(periods, cm);
+            if (period == null) break;
+
+            int ps = parseMinute(period.getStartTime());
+            int pe = parseMinute(period.getEndTime());
+            LocalDateTime periodEnd = ps <= pe
+                    ? cursor.toLocalDate().atStartOfDay().plusMinutes(pe)
+                    : (cm >= ps
+                    ? cursor.toLocalDate().atStartOfDay().plusDays(1).plusMinutes(pe)
+                    : cursor.toLocalDate().atStartOfDay().plusMinutes(pe));
+            LocalDateTime sliceEnd = periodEnd.isBefore(now) ? periodEnd : now;
+            if (sliceEnd.equals(cursor)) break;
+
+            long sliceSeconds = Duration.between(cursor, sliceEnd).getSeconds();
+            BigDecimal kwh = power.multiply(BigDecimal.valueOf(sliceSeconds))
+                    .divide(BigDecimal.valueOf(3600), 10, RoundingMode.HALF_UP);
+            BigDecimal remaining = chargedKwh.subtract(totalKwh);
+            if (kwh.compareTo(remaining) > 0) kwh = remaining;
+
+            chargeFee = chargeFee.add(kwh.multiply(period.getElectricityPrice()));
+            serviceFee = serviceFee.add(kwh.multiply(period.getServicePrice()));
+            totalKwh = totalKwh.add(kwh);
+            cursor = sliceEnd;
+        }
+        return chargeFee.add(serviceFee).setScale(2, RoundingMode.HALF_UP);
     }
 
     private static int parseMinute(String time) {
         String[] parts = time.split(":");
         return Integer.parseInt(parts[0]) * 60 + Integer.parseInt(parts[1]);
+    }
+
+    private static BillingRatePeriod findPeriod(List<BillingRatePeriod> periods, int minuteOfDay) {
+        for (BillingRatePeriod p : periods) {
+            int s = parseMinute(p.getStartTime());
+            int e = parseMinute(p.getEndTime());
+            if (s <= e ? (minuteOfDay >= s && minuteOfDay < e) : (minuteOfDay >= s || minuteOfDay < e)) {
+                return p;
+            }
+        }
+        return null;
     }
 
     // ========== 事件处理 ==========

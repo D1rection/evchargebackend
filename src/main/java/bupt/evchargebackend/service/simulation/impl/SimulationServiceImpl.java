@@ -87,6 +87,11 @@ public class SimulationServiceImpl implements SimulationService {
 
     @Override
     public Result<Void> step(int minutes) {
+        // 大于5分钟的步进拆成连续5分钟步进，确保事件在正确时间触发
+        while (minutes > 5) {
+            step(5);
+            minutes -= 5;
+        }
         timeProvider.advance(minutes);
         LocalDateTime now = timeProvider.now();
         while (eventCursor < ALL_EVENTS.size()
@@ -268,10 +273,7 @@ public class SimulationServiceImpl implements SimulationService {
             req.setCarId(e.targetId);
             req.setRequestAmount(BigDecimal.valueOf(e.value));
             req.setRequestMode(e.chargeType.equals("F") ? "FAST" : "SLOW");
-            var sr = chargingService.submit(req);
-            if ("V6".equals(e.targetId) && sr.getData() != null) {
-                log.warn("V6 submit结果: carState={}, carPosition={}", sr.getData().getCarState(), sr.getData().getCarPosition());
-            }
+            chargingService.submit(req);
         } else if (e.value == 0) {
             // 先尝试普通取消（WAITING/CALLED）
             ChargingCancelRequest cancelReq = new ChargingCancelRequest();
@@ -333,12 +335,7 @@ public class SimulationServiceImpl implements SimulationService {
         for (var session : sessions) {
             if (session.getStartTime() == null) continue;
             long elapsedSeconds = Duration.between(session.getStartTime(), now).getSeconds();
-            if (elapsedSeconds <= 0) {
-                if ("V6".equals(session.getCarId())) {
-                    log.warn("V6 跳过: startTime={}, now={}, elapsed={}", session.getStartTime(), now, elapsedSeconds);
-                }
-                continue;
-            }
+            if (elapsedSeconds <= 0) continue;
             ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
             if (pile == null) continue;
             BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
@@ -346,11 +343,6 @@ public class SimulationServiceImpl implements SimulationService {
                     .divide(BigDecimal.valueOf(3600), 10, RoundingMode.HALF_UP);
             BigDecimal target = session.getTargetKwh() != null ? session.getTargetKwh() : BigDecimal.ZERO;
             BigDecimal charged = estimated.min(target);
-
-            if ("V6".equals(session.getCarId())) {
-                log.warn("V6 advance: startTime={}, now={}, elapsed={}s, estimated={}, old={}",
-                        session.getStartTime(), now, elapsedSeconds, estimated, session.getChargedKwh());
-            }
 
             session.setChargedKwh(charged);
             chargingSessionMapper.updateById(session);

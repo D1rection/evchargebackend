@@ -15,7 +15,6 @@ import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.user.CarMapper;
 import bupt.evchargebackend.common.time.TimeProvider;
 import bupt.evchargebackend.service.pile.impl.PileServiceImpl;
-import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
 import bupt.evchargebackend.mapper.fault.FaultRecordMapper;
 import bupt.evchargebackend.service.charging.ChargingService;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
@@ -41,7 +40,6 @@ class PileServiceImplTest {
     private TimeProvider timeProvider;
     private FaultRecordMapper faultRecordMapper;
     private ChargingService chargingService;
-    private ChargingOrderMapper chargingOrderMapper;
     private PileServiceImpl service;
 
     private static final String PILE_ID = "F1";
@@ -57,10 +55,9 @@ class PileServiceImplTest {
         timeProvider = mock(TimeProvider.class);
         faultRecordMapper = mock(FaultRecordMapper.class);
         chargingService = mock(ChargingService.class);
-        chargingOrderMapper = mock(ChargingOrderMapper.class);
         doReturn(NOW).when(timeProvider).now();
         service = new PileServiceImpl(chargingPileMapper, engine, chargingSessionMapper, carMapper,
-                timeProvider, faultRecordMapper, chargingService, chargingOrderMapper);
+                timeProvider, faultRecordMapper, chargingService);
     }
 
     @Test

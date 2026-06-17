@@ -277,20 +277,27 @@ public class SimulationServiceImpl implements SimulationService {
             var cancelResult = chargingService.cancel(cancelReq);
             if (cancelResult.getCode() == 200) return;
 
-            // 可能是 CHARGING 状态，改走结束充电
+            // 可能是 CHARGING 或 INTERRUPTED 状态
             ChargingSession session = chargingSessionMapper.selectOne(
                     new QueryWrapper<ChargingSession>()
                             .eq("car_id", e.targetId)
-                            .eq("session_status", SessionStatus.CHARGING)
+                            .in("session_status", SessionStatus.CHARGING, SessionStatus.INTERRUPTED)
                             .orderByDesc("created_at").last("LIMIT 1")
             );
-            if (session != null) {
+            if (session != null && session.getSessionStatus() == SessionStatus.CHARGING) {
                 ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
                 if (pile != null) {
                     ChargingEndRequest endReq = new ChargingEndRequest();
                     endReq.setCarId(e.targetId);
                     endReq.setChargingPileNum(pile.getPileId());
                     chargingService.end(endReq);
+                }
+            } else if (session != null && session.getSessionStatus() == SessionStatus.INTERRUPTED) {
+                // 中断的订单直接标记 FINISHED，不创建账单
+                ChargingOrder order = chargingOrderMapper.selectById(session.getOrderId());
+                if (order != null && order.getOrderStatus() == OrderStatus.CHARGING) {
+                    order.setOrderStatus(OrderStatus.FINISHED);
+                    chargingOrderMapper.updateById(order);
                 }
             }
         }

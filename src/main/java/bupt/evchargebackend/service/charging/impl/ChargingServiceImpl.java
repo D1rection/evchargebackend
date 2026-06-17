@@ -34,6 +34,8 @@ import bupt.evchargebackend.service.charging.ChargingService;
 import bupt.evchargebackend.common.time.TimeProvider;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -52,6 +54,8 @@ import java.util.concurrent.TimeUnit;
 
 @Service
 public class ChargingServiceImpl implements ChargingService {
+
+    private static final Logger log = LoggerFactory.getLogger(ChargingServiceImpl.class);
 
     private final ChargingOrderMapper chargingOrderMapper;
     private final CarMapper carMapper;
@@ -648,6 +652,7 @@ public class ChargingServiceImpl implements ChargingService {
 
     /** 开始充电：创建充电会话，更新桩状态和订单状态。 */
     private void startCharging(ChargingPile pile, ChargingOrder order) {
+        log.warn("startCharging: pileId={}, orderId={}, carId={}", pile.getPileId(), order.getOrderId(), order.getCarId());
         pile.setWorkingState(WorkingState.CHARGING);
         chargingPileMapper.updateById(pile);
 
@@ -831,10 +836,14 @@ public class ChargingServiceImpl implements ChargingService {
     private void tryAutoStartNextCar(String pileId) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);
         if (pile == null) return;
-        if (pile.getWorkingState() != WorkingState.AVAILABLE) return;
+        if (pile.getWorkingState() != WorkingState.AVAILABLE) {
+            log.warn("tryAutoStartNextCar {} skip: workingState={}", pileId, pile.getWorkingState());
+            return;
+        }
         if (pile.getCurrentSessionId() != null) return;
         ChargingOrder next = engine.peekPileQueue(pileId);
         if (next != null && next.getOrderStatus() == OrderStatus.CALLED) {
+            log.warn("tryAutoStartNextCar {} start: carId={}, orderId={}", pileId, next.getCarId(), next.getOrderId());
             startCharging(pile, next);
         }
     }

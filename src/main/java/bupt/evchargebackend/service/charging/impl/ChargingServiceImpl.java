@@ -799,6 +799,7 @@ public class ChargingServiceImpl implements ChargingService {
 
         String selected = dispatchToBestPile(order, pileType);
         if (selected != null) {
+            engine.removeFromWait(order.getCarId());
             queueEntryMapper.deleteById(qe.getId());
         }
     }

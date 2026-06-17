@@ -879,29 +879,25 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     @Override
-    /** 分发故障队列：用 dispatchToBestPile 逐个派到最优桩（同 `tryFillFromWaiting` 逻辑）。 */
     public void distributeFaultQueue(PileType pileType) {
         while (engine.hasFaults(pileType)) {
+            ChargingPile available = chargingPileMapper.selectList(
+                    new QueryWrapper<ChargingPile>()
+                            .eq("pile_type", pileType)
+                            .eq("working_state", WorkingState.AVAILABLE)
+                            .last("LIMIT 1")
+            ).stream().findFirst().orElse(null);
+            if (available == null) break;
             ChargingOrder order = engine.pollFault(pileType);
             if (order == null) break;
-            if (dispatchToBestPile(order, pileType) == null) {
-                engine.enqueueFault(order);
-                break;
-            }
-        }
-        // 分发完后尝试从等候区补位（故障已恢复）
-        String key = pileType == PileType.FAST ? "FAST" : "SLOW";
-        QueueEntry qe = queueEntryMapper.selectOne(
-                new QueryWrapper<QueueEntry>()
-                        .eq("queue_type", "WAIT")
-                        .eq("queue_key", key)
-                        .orderByAsc("id").last("LIMIT 1")
-        );
-        if (qe != null) {
-            ChargingOrder order = chargingOrderMapper.selectById(qe.getOrderId());
-            if (order != null && order.getOrderStatus() == OrderStatus.WAITING
-                    && dispatchToBestPile(order, pileType) != null) {
-                queueEntryMapper.deleteById(qe.getId());
+            engine.addToPileQueue(available.getPileId(), order);
+            insertQueueEntry("PILE", available.getPileId(), order.getOrderId());
+            if (available.getWorkingState() == WorkingState.AVAILABLE
+                    && available.getCurrentSessionId() == null) {
+                startCharging(available, order);
+            } else {
+                order.setOrderStatus(OrderStatus.CALLED);
+                chargingOrderMapper.updateById(order);
             }
         }
     }

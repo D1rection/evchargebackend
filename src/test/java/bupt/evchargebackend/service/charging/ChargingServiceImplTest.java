@@ -640,7 +640,8 @@ class ChargingServiceImplTest {
         doReturn(false).when(engine).hasAnyFault();
         doReturn(waitEntry).when(queueEntryMapper).selectOne(any());
         doReturn(waitingOrder).when(chargingOrderMapper).selectById("wait-order-1");
-        doReturn(mutableList(createFastPile("F1"))).when(chargingPileMapper).selectList(any());
+        // 第一次查故障桩 → 空；第二次 dispatchToBestPile → 返回 F1
+        doReturn(List.of()).doReturn(mutableList(createFastPile("F1"))).when(chargingPileMapper).selectList(any());
         doReturn(true).when(engine).addToPileQueue(anyString(), any());
         // onPileReleased 默认 mock 返回空，无需配置
 

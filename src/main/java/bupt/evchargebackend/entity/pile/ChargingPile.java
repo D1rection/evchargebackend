@@ -40,6 +40,7 @@ public class ChargingPile {
     private PowerState powerState;
 
     /** 运行状态 */
+    @TableField(updateStrategy = FieldStrategy.ALWAYS)
     private WorkingState workingState;
 
     /** 当前充电会话ID */

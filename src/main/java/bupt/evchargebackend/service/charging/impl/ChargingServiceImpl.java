@@ -429,12 +429,15 @@ public class ChargingServiceImpl implements ChargingService {
         }
         engine.onPileReleased(pileId, pileType);
 
-        // 9. 更新桩（使 totalActiveMinutes 能正确计算）
+        // 9. 更新桩累计统计
+        accumulatePileStats(pile, feeResult.totalKwh, chargeMinutes);
+
+        // 10. 更新桩状态（使 totalActiveMinutes 能正确计算）
         pile.setWorkingState(WorkingState.AVAILABLE);
         pile.setCurrentSessionId(null);
         chargingPileMapper.updateById(pile);
 
-        // 10. 补位 + 自动开始
+        // 11. 补位 + 自动开始
         tryFillFromWaiting(pileId, pileType);
         tryAutoStartNextCar(pileId);
 
@@ -908,7 +911,10 @@ public class ChargingServiceImpl implements ChargingService {
         if (qe != null) queueEntryMapper.deleteById(qe.getId());
         engine.onPileReleased(pile.getPileId(), pileType);
 
-        // 先更新桩状态，使 totalActiveMinutes 能正确计算
+        // 更新桩累计统计
+        accumulatePileStats(pile, feeResult.totalKwh, chargeMinutes);
+
+        // 更新桩状态，使 totalActiveMinutes 能正确计算
         pile.setWorkingState(WorkingState.AVAILABLE);
         pile.setCurrentSessionId(null);
         chargingPileMapper.updateById(pile);
@@ -941,6 +947,16 @@ public class ChargingServiceImpl implements ChargingService {
 
         order.setOrderStatus(OrderStatus.FINISHED);
         chargingOrderMapper.updateById(order);
+    }
+
+    /** 累加充电桩累计统计（应在 updateById 前调用）。 */
+    private void accumulatePileStats(ChargingPile pile, BigDecimal chargedKwh, long chargeMinutes) {
+        pile.setTotalChargeKwh(pile.getTotalChargeKwh() != null
+                ? pile.getTotalChargeKwh().add(chargedKwh) : chargedKwh);
+        pile.setTotalChargeCount(pile.getTotalChargeCount() != null
+                ? pile.getTotalChargeCount() + 1 : 1);
+        pile.setTotalChargeMinutes(pile.getTotalChargeMinutes() != null
+                ? pile.getTotalChargeMinutes() + (int) chargeMinutes : (int) chargeMinutes);
     }
 
     private void insertQueueEntry(String queueType, String queueKey, String orderId) {

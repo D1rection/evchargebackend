@@ -5,6 +5,7 @@ import bupt.evchargebackend.service.simulation.SimulationService;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -57,5 +58,40 @@ public class SimulationController {
     @GetMapping("/state")
     public Result<Map<String, Object>> state() {
         return simulationService.getState();
+    }
+
+    /**
+     * 自动播放：重置数据库 → 初始化数据 → 自动步进至所有车辆充电完成。
+     * <p>调用后用 {@code GET /state} 轮询进度，播放结束后用 {@code GET /checkpoints} 获取全量快照。</p>
+     *
+     * @param speed normal=1:1真实比例(30s/步), fast=10倍速(3s/步), instant=立即完成
+     */
+    @PostMapping("/play")
+    public Result<Void> play(@RequestParam(defaultValue = "fast") String speed) {
+        return simulationService.play(speed);
+    }
+
+    /**
+     * 暂停自动播放。
+     */
+    @PostMapping("/pause")
+    public Result<Void> pause() {
+        return simulationService.pause();
+    }
+
+    /**
+     * 获取自动播放期间所有 checkpoints 快照列表。
+     */
+    @GetMapping("/checkpoints")
+    public Result<List<Map<String, Object>>> checkpoints() {
+        return simulationService.getCheckpoints();
+    }
+
+    /**
+     * 是否正在自动播放。
+     */
+    @GetMapping("/playing")
+    public Result<Boolean> playing() {
+        return simulationService.isPlaying();
     }
 }

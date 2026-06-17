@@ -781,24 +781,22 @@ public class ChargingServiceImpl implements ChargingService {
         if (engine.hasAnyFault()) return;
 
         String waitKey = pileType == PileType.FAST ? "FAST" : "SLOW";
-        QueueEntry qe = queueEntryMapper.selectOne(
-                new QueryWrapper<QueueEntry>()
-                        .eq("queue_type", "WAIT")
-                        .eq("queue_key", waitKey)
-                        .orderByAsc("id")
-                        .last("LIMIT 1")
-        );
-        if (qe == null) return;
-
-        ChargingOrder order = chargingOrderMapper.selectById(qe.getOrderId());
-        if (order == null) return;
-        if (order.getOrderStatus() != OrderStatus.WAITING) {
-            queueEntryMapper.deleteById(qe.getId());
-            return;
-        }
-
-        String selected = dispatchToBestPile(order, pileType);
-        if (selected != null) {
+        while (true) {
+            QueueEntry qe = queueEntryMapper.selectOne(
+                    new QueryWrapper<QueueEntry>()
+                            .eq("queue_type", "WAIT")
+                            .eq("queue_key", waitKey)
+                            .orderByAsc("id")
+                            .last("LIMIT 1")
+            );
+            if (qe == null) break;
+            ChargingOrder order = chargingOrderMapper.selectById(qe.getOrderId());
+            if (order == null) break;
+            if (order.getOrderStatus() != OrderStatus.WAITING) {
+                queueEntryMapper.deleteById(qe.getId());
+                continue;
+            }
+            if (dispatchToBestPile(order, pileType) == null) break;
             engine.removeFromWait(order.getCarId());
             queueEntryMapper.deleteById(qe.getId());
         }

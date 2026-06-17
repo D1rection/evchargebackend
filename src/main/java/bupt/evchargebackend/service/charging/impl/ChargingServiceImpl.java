@@ -792,11 +792,8 @@ public class ChargingServiceImpl implements ChargingService {
             return;
         }
 
-        if (engine.addToPileQueue(pileId, order)) {
-            order.setOrderStatus(OrderStatus.CALLED);
-            order.setPileId(pileId);
-            chargingOrderMapper.updateById(order);
-            insertQueueEntry("PILE", pileId, order.getOrderId());
+        String selected = dispatchToBestPile(order, pileType);
+        if (selected != null) {
             queueEntryMapper.deleteById(qe.getId());
         }
     }

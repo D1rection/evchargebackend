@@ -640,11 +640,12 @@ class ChargingServiceImplTest {
         doReturn(false).when(engine).hasAnyFault();
         doReturn(waitEntry).when(queueEntryMapper).selectOne(any());
         doReturn(waitingOrder).when(chargingOrderMapper).selectById("wait-order-1");
-        doReturn(true).when(engine).addToPileQueue("F1", waitingOrder);
+        doReturn(mutableList(createFastPile("F1"))).when(chargingPileMapper).selectList(any());
+        doReturn(true).when(engine).addToPileQueue(anyString(), any());
         // onPileReleased 默认 mock 返回空，无需配置
 
         service.end(req);
-        verify(engine).addToPileQueue(eq("F1"), eq(waitingOrder));
+        verify(engine).addToPileQueue(eq("F1"), any(ChargingOrder.class));
         verify(chargingOrderMapper, atLeastOnce()).updateById(any(ChargingOrder.class));
     }
 

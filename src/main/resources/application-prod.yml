@@ -13,4 +13,4 @@ mybatis-plus:
 
 app:
   data-seeder:
-    enabled: false
+    enabled: true

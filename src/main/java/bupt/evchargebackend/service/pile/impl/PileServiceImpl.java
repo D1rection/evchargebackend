@@ -19,6 +19,7 @@ import bupt.evchargebackend.common.time.TimeProvider;
 import bupt.evchargebackend.entity.fault.FaultRecord;
 import bupt.evchargebackend.entity.fault.enums.FaultStatus;
 import bupt.evchargebackend.mapper.fault.FaultRecordMapper;
+import bupt.evchargebackend.service.charging.ChargingService;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
@@ -39,19 +40,22 @@ public class PileServiceImpl implements PileService {
     private final CarMapper carMapper;
     private final TimeProvider timeProvider;
     private final FaultRecordMapper faultRecordMapper;
+    private final ChargingService chargingService;
 
     public PileServiceImpl(ChargingPileMapper chargingPileMapper,
                            SchedulingEngine engine,
                            ChargingSessionMapper chargingSessionMapper,
                            CarMapper carMapper,
                            TimeProvider timeProvider,
-                           FaultRecordMapper faultRecordMapper) {
+                           FaultRecordMapper faultRecordMapper,
+                           ChargingService chargingService) {
         this.chargingPileMapper = chargingPileMapper;
         this.engine = engine;
         this.chargingSessionMapper = chargingSessionMapper;
         this.carMapper = carMapper;
         this.timeProvider = timeProvider;
         this.faultRecordMapper = faultRecordMapper;
+        this.chargingService = chargingService;
     }
 
     @Override
@@ -160,6 +164,9 @@ public class PileServiceImpl implements PileService {
             record.setRecoverTime(timeProvider.now());
             faultRecordMapper.updateById(record);
         }
+
+        // 触发补位 + 自动开始
+        chargingService.onPileRecovered(pileId);
     }
 
     @Override

@@ -840,6 +840,14 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     @Override
+    public void onPileRecovered(String pileId) {
+        ChargingPile pile = chargingPileMapper.selectById(pileId);
+        if (pile == null) return;
+        tryFillFromWaiting(pileId, pile.getPileType());
+        tryAutoStartNextCar(pileId);
+    }
+
+    @Override
     public void autoFinish(String sessionId) {
         ChargingSession session = chargingSessionMapper.selectById(sessionId);
         if (session == null || session.getSessionStatus() != SessionStatus.CHARGING) return;

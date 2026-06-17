@@ -62,4 +62,9 @@ public interface ChargingService {
      * 充满自动结束充电（模拟/定时器触发）。
      */
     void autoFinish(String sessionId);
+
+    /**
+     * 故障桩恢复后触发补位和自动开始。
+     */
+    void onPileRecovered(String pileId);
 }

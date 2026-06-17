@@ -817,19 +817,10 @@ public class ChargingServiceImpl implements ChargingService {
         return best.getPileId();
     }
 
-    /** 将中断的 session 恢复为 CHARGING 并更新目标桩 ID。 */
+    /** 将中断的 session 恢复为 CHARGING（pileId 不变，等 startCharging 新建 session）。 */
     private void resumeInterruptedSession(ChargingOrder order, String newPileId) {
-        ChargingSession session = chargingSessionMapper.selectOne(
-                new QueryWrapper<ChargingSession>()
-                        .eq("order_id", order.getOrderId())
-                        .eq("session_status", SessionStatus.INTERRUPTED)
-                        .last("LIMIT 1")
-        );
-        if (session != null) {
-            session.setSessionStatus(SessionStatus.CHARGING);
-            session.setPileId(newPileId);
-            chargingSessionMapper.updateById(session);
-        }
+        // 故障队列的车被派到新桩的队列时，中断 session 暂时保持中断。
+        // 等车在目标桩上通过 startCharging 创建新 session 后，原中断 session 交由 autoFinish 处理。
     }
 
     /** 桩空闲后自动开始下一辆车：桩 AVAILABLE 且队列 position 0 有 CALLED 订单则开始充电。 */

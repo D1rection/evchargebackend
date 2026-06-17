@@ -40,14 +40,14 @@ public class AdminReportController {
     }
 
     /**
-     * 导出报表为 CSV 文件下载。
+     * 导出报表为 Excel (.xlsx) 文件下载。
      *
      * @param targetType 统计目标（all / single）
      * @param pileId     单桩统计时的充电桩ID
      * @param timeRange  时间范围（day / week / month / custom）
      * @param startDate  自定义起始日期
      * @param endDate    自定义结束日期
-     * @return CSV 文件字节流
+     * @return Excel 文件字节流
      */
     @GetMapping("/reports/export")
     public ResponseEntity<byte[]> exportReport(
@@ -60,8 +60,9 @@ public class AdminReportController {
                 targetType, pileId, timeRange, startDate, endDate);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION,
-                        "attachment; filename=report.csv")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
+                        "attachment; filename=report.xlsx")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(data);
     }
 }

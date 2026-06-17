@@ -3,9 +3,12 @@ package bupt.evchargebackend.service.admin.impl;
 import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminReportService;
+import cn.hutool.poi.excel.ExcelUtil;
+import cn.hutool.poi.excel.ExcelWriter;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
 import java.time.DayOfWeek;
 import java.time.LocalDate;
@@ -91,12 +94,42 @@ public class AdminReportServiceImpl implements AdminReportService {
     public byte[] exportReport(String targetType, String pileId,
                                String timeRange, String startDate, String endDate) {
         Map<String, Object> data = generateReport(targetType, pileId, timeRange, startDate, endDate).getData();
-        StringBuilder csv = new StringBuilder();
-        csv.append("指标,值\n");
-        for (Map.Entry<String, Object> entry : data.entrySet()) {
-            csv.append(entry.getKey()).append(",").append(entry.getValue()).append("\n");
+
+        // 字段中文映射
+        Map<String, String> headerMap = new LinkedHashMap<>();
+        headerMap.put("totalChargeCount", "充电次数");
+        headerMap.put("totalChargeAmount", "充电电量(kWh)");
+        headerMap.put("totalRevenue", "总营收(元)");
+        headerMap.put("totalChargeFee", "电费(元)");
+        headerMap.put("totalServiceFee", "服务费(元)");
+        headerMap.put("avgChargeDuration", "平均充电时长(分钟)");
+        headerMap.put("faultRate", "故障率(%)");
+
+        try (ExcelWriter writer = ExcelUtil.getWriter(true);
+             ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+
+            // 写表头
+            writer.writeCellValue(0, 0, "指标");
+            writer.writeCellValue(1, 0, "值");
+
+            // 写数据行
+            int row = 1;
+            for (Map.Entry<String, Object> entry : data.entrySet()) {
+                String label = headerMap.getOrDefault(entry.getKey(), entry.getKey());
+                writer.writeCellValue(0, row, label);
+                writer.writeCellValue(1, row, entry.getValue());
+                row++;
+            }
+
+            // 设置列宽（单位：字符数）
+            writer.setColumnWidth(0, 20);
+            writer.setColumnWidth(1, 15);
+
+            writer.flush(out);
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new RuntimeException("导出 Excel 失败", e);
         }
-        return csv.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
     }
 
     private Map<String, LocalDateTime> calculateTimeRange(String timeRange, String startDate, String endDate) {

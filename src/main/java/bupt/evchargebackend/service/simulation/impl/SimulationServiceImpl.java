@@ -145,14 +145,6 @@ public class SimulationServiceImpl implements SimulationService {
             for (var o : engine.getPileQueue(pile.getPileId())) {
                 queue.add(queueItem(o));
             }
-            // 故障桩显示同类型故障队列车辆
-            if (pile.getWorkingState() == WorkingState.FAULT) {
-                var faultQ = pile.getPileType() == PileType.FAST
-                        ? engine.getFastFaultQueue() : engine.getSlowFaultQueue();
-                for (var o : faultQ) {
-                    queue.add(queueItem(o));
-                }
-            }
             p.put("queue", queue);
             piles.put(pile.getPileId(), p);
         }

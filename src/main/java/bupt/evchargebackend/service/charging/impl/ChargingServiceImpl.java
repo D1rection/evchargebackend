@@ -724,20 +724,20 @@ public class ChargingServiceImpl implements ChargingService {
         chargingOrderMapper.updateById(order);
     }
 
-    /** 桩释放后补位：先试故障队列，再试等候区。 */
+    /** 桩释放后补位：桩空闲时先试故障队列，再试等候区。 */
     private void tryFillFromWaiting(String pileId, PileType pileType) {
         if (engine.pileQueueSize(pileId) >= 3) return;
+        ChargingPile pile = chargingPileMapper.selectById(pileId);
+        boolean pileAvailable = pile != null && pile.getWorkingState() == WorkingState.AVAILABLE
+                && pile.getCurrentSessionId() == null;
 
-        // 优先从故障队列取车
-        if (engine.hasFaults(pileType)) {
+        // 桩空闲时优先从故障队列取车（直接 auto-start）
+        if (pileAvailable && engine.hasFaults(pileType)) {
             ChargingOrder faultOrder = engine.pollFault(pileType);
             if (faultOrder != null) {
-                if (engine.addToPileQueue(pileId, faultOrder)) {
-                    faultOrder.setOrderStatus(OrderStatus.CALLED);
-                    faultOrder.setPileId(pileId);
-                    chargingOrderMapper.updateById(faultOrder);
-                    insertQueueEntry("PILE", pileId, faultOrder.getOrderId());
-                }
+                engine.addToPileQueue(pileId, faultOrder);
+                insertQueueEntry("PILE", pileId, faultOrder.getOrderId());
+                startCharging(pile, faultOrder);
                 return;
             }
         }

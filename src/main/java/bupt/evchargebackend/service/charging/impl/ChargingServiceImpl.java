@@ -757,8 +757,8 @@ public class ChargingServiceImpl implements ChargingService {
             if (faultHead == null || dispatchToBestPile(faultHead, pileType) == null) break;
             engine.pollFault(pileType);
         }
-        // 故障队列处理完后，如果还有车派不出去就不再处理等候区
-        if (engine.hasFaults(pileType)) return;
+        // 故障队列处理完后有残留，或系统存在任何故障 → 不调度等候区
+        if (engine.hasFaults(pileType) || engine.hasAnyFault()) return;
 
         String waitKey = pileType == PileType.FAST ? "FAST" : "SLOW";
         QueueEntry qe = queueEntryMapper.selectOne(

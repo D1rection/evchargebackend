@@ -467,7 +467,6 @@ public class ChargingServiceImpl implements ChargingService {
         } else {
             engine.removeFromAllPileQueues(carId);
         }
-        engine.removeFromFaultQueues(carId);
         queueEntryMapper.delete(
                 new QueryWrapper<QueueEntry>().eq("order_id", orderId)
         );
@@ -748,17 +747,33 @@ public class ChargingServiceImpl implements ChargingService {
         return true;
     }
 
-    /** 桩释放后补位：先试故障队列（按最优桩选择），再试等候区。 */
-    /** 桩释放后补位：先试故障队列（最优桩），再试等候区（最优桩）。 */
+    /** 桩释放后补位：同类型有故障桩时从故障桩队列取车（优先级高于等候区）。 */
     private void tryFillFromWaiting(String pileId, PileType pileType) {
-        // 故障队列优先级高于等候区，逐个尝试直到派不出去或清空
-        while (engine.hasFaults(pileType)) {
-            ChargingOrder faultHead = engine.peekFault(pileType);
-            if (faultHead == null || dispatchToBestPile(faultHead, pileType) == null) break;
-            engine.pollFault(pileType);
+        // 有同类型故障桩 → 从故障桩队列取一车（位置 0 优先）
+        ChargingPile faultedPile = chargingPileMapper.selectList(
+                new QueryWrapper<ChargingPile>()
+                        .eq("pile_type", pileType)
+                        .eq("working_state", "FAULT")
+                        .last("LIMIT 1")
+        ).stream().findFirst().orElse(null);
+        if (faultedPile != null) {
+            ChargingOrder order = engine.pollFromPileQueueHead(faultedPile.getPileId());
+            if (order != null) {
+                if (engine.addToPileQueue(pileId, order)) {
+                    order.setOrderStatus(OrderStatus.CALLED);
+                    order.setPileId(pileId);
+                    chargingOrderMapper.updateById(order);
+                    insertQueueEntry("PILE", pileId, order.getOrderId());
+                    // 恢复中断的 session（充电车被调度到新桩时）
+                    resumeInterruptedSession(order, pileId);
+                } else {
+                    engine.addToPileQueue(faultedPile.getPileId(), order);
+                }
+            }
+            return; // 有故障时不处理等候区
         }
-        // 故障队列处理完后有残留，或系统存在任何故障 → 不调度等候区
-        if (engine.hasFaults(pileType) || engine.hasAnyFault()) return;
+        // 有任意故障 → 不调度等候区
+        if (engine.hasAnyFault()) return;
 
         String waitKey = pileType == PileType.FAST ? "FAST" : "SLOW";
         QueueEntry qe = queueEntryMapper.selectOne(
@@ -798,6 +813,21 @@ public class ChargingServiceImpl implements ChargingService {
         chargingOrderMapper.updateById(order);
         insertQueueEntry("PILE", best.getPileId(), order.getOrderId());
         return best.getPileId();
+    }
+
+    /** 将中断的 session 恢复为 CHARGING 并更新目标桩 ID。 */
+    private void resumeInterruptedSession(ChargingOrder order, String newPileId) {
+        ChargingSession session = chargingSessionMapper.selectOne(
+                new QueryWrapper<ChargingSession>()
+                        .eq("order_id", order.getOrderId())
+                        .eq("session_status", SessionStatus.INTERRUPTED)
+                        .last("LIMIT 1")
+        );
+        if (session != null) {
+            session.setSessionStatus(SessionStatus.CHARGING);
+            session.setPileId(newPileId);
+            chargingSessionMapper.updateById(session);
+        }
     }
 
     /** 桩空闲后自动开始下一辆车：桩 AVAILABLE 且队列 position 0 有 CALLED 订单则开始充电。 */
@@ -876,30 +906,6 @@ public class ChargingServiceImpl implements ChargingService {
 
         order.setOrderStatus(OrderStatus.FINISHED);
         chargingOrderMapper.updateById(order);
-    }
-
-    @Override
-    public void distributeFaultQueue(PileType pileType) {
-        while (engine.hasFaults(pileType)) {
-            ChargingPile available = chargingPileMapper.selectList(
-                    new QueryWrapper<ChargingPile>()
-                            .eq("pile_type", pileType)
-                            .eq("working_state", WorkingState.AVAILABLE)
-                            .last("LIMIT 1")
-            ).stream().findFirst().orElse(null);
-            if (available == null) break;
-            ChargingOrder order = engine.pollFault(pileType);
-            if (order == null) break;
-            engine.addToPileQueue(available.getPileId(), order);
-            insertQueueEntry("PILE", available.getPileId(), order.getOrderId());
-            if (available.getWorkingState() == WorkingState.AVAILABLE
-                    && available.getCurrentSessionId() == null) {
-                startCharging(available, order);
-            } else {
-                order.setOrderStatus(OrderStatus.CALLED);
-                chargingOrderMapper.updateById(order);
-            }
-        }
     }
 
     private void insertQueueEntry(String queueType, String queueKey, String orderId) {

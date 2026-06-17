@@ -10,8 +10,6 @@ import bupt.evchargebackend.dto.charging.ChargingStateResponse;
 import bupt.evchargebackend.dto.charging.ModifyResponse;
 import bupt.evchargebackend.dto.charging.QueueStatusResponse;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
-import bupt.evchargebackend.entity.pile.enums.PileType;
-
 import java.math.BigDecimal;
 import java.util.Map;
 
@@ -64,9 +62,4 @@ public interface ChargingService {
      * 充满自动结束充电（模拟/定时器触发）。
      */
     void autoFinish(String sessionId);
-
-    /**
-     * 故障恢复后分发故障队列车辆到同类型空闲桩。
-     */
-    void distributeFaultQueue(PileType pileType);
 }

@@ -143,16 +143,12 @@ public class SimulationServiceImpl implements SimulationService {
             // 桩队列
             List<Map<String, Object>> queue = new ArrayList<>();
             if (pile.getWorkingState() == WorkingState.FAULT) {
-                // 故障桩显示故障队列（保持与故障队列一致）
-                var fq = pile.getPileType() == PileType.FAST
-                        ? engine.getFastFaultQueue() : engine.getSlowFaultQueue();
-                for (var o : fq) {
-                    queue.add(queueItem(o));
-                }
-            } else {
-                for (var o : engine.getPileQueue(pile.getPileId())) {
-                    queue.add(queueItem(o));
-                }
+                // 故障桩显示完整队列（含 position 0 的中断车）
+                ChargingOrder head = engine.peekPileQueue(pile.getPileId());
+                if (head != null) queue.add(queueItem(head));
+            }
+            for (var o : engine.getPileQueue(pile.getPileId())) {
+                queue.add(queueItem(o));
             }
             p.put("queue", queue);
             piles.put(pile.getPileId(), p);
@@ -169,15 +165,7 @@ public class SimulationServiceImpl implements SimulationService {
         }
         state.put("waitingQueue", waiting);
 
-        // 故障队列
-        List<Map<String, Object>> fault = new ArrayList<>();
-        for (var o : engine.getFastFaultQueue()) {
-            fault.add(queueItem(o));
-        }
-        for (var o : engine.getSlowFaultQueue()) {
-            fault.add(queueItem(o));
-        }
-        state.put("faultQueue", fault);
+        state.put("faultQueue", List.of());
 
         // 已完成订单
         List<String> completed = chargingOrderMapper.selectList(

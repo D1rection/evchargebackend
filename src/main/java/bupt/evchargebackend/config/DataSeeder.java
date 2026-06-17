@@ -74,7 +74,7 @@ public class DataSeeder implements CommandLineRunner {
         } catch (Exception e) {
             throw new RuntimeException("清空数据失败", e);
         }
-        engine.rebuild(List.of(), List.of(), List.of(), List.of(), Map.of());
+        engine.rebuild(List.of(), List.of(), Map.of());
 
         log.info("初始化基础数据");
         initAccounts();

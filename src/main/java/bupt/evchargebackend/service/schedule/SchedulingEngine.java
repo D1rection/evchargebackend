@@ -3,26 +3,19 @@ package bupt.evchargebackend.service.schedule;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.enums.RequestMode;
 import bupt.evchargebackend.entity.pile.enums.PileType;
-import bupt.evchargebackend.service.schedule.event.PileRecoveredEvent;
-import bupt.evchargebackend.service.schedule.event.PileReleasedEvent;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * 调度引擎：管理等候区、故障队列、桩前队列。
+ * 调度引擎：管理等候区、桩前队列。
  *
  * 等候区（快/慢）— 全满时进入，故障期间冻结
- * 故障队列（快/慢）— 故障车暂存，恢复后分发
- * 桩前队列（每桩一条）— position 0 充电中，M 上限（默认 3）
+ * 桩前队列（每桩一条）— position 0 充电中，position 1+ 排队，M 上限（默认 3）
  *
- * onPileReleased — 充电完成 → 排队下一辆顶上 → 等候区填补
- * onPileFaulted — 桩故障 → 排队车移入故障队列（保留充电中车辆）
- *
- * 故障车由 Service 层 redistributeFaults() 分发
+ * 故障不影响物理队列——故障桩的排队车仍留在原桩 deque，通过标记实现优先级调度。
  *
  * @author Deng Chao
  * @since 2026-06-14
@@ -37,11 +30,8 @@ public class SchedulingEngine {
 
     private final Queue<ChargingOrder> fastWaitQueue = new LinkedList<>();
     private final Queue<ChargingOrder> slowWaitQueue = new LinkedList<>();
-    private final Queue<ChargingOrder> fastFaultQueue = new LinkedList<>();
-    private final Queue<ChargingOrder> slowFaultQueue = new LinkedList<>();
     private final Map<String, Deque<ChargingOrder>> pileQueues = new ConcurrentHashMap<>();
-    /** 抑制fillSlot从等候区分发（边界步进有待处理故障时暂缓，避免故障前一刻误分）。 */
-    private boolean deferWaitDispatch = false;
+    private final Set<String> faultedPiles = new HashSet<>();
 
     @Autowired
     public SchedulingEngine(ScheduleStrategy scheduleStrategy) {
@@ -81,31 +71,28 @@ public class SchedulingEngine {
         return fastWaitQueue.size() + slowWaitQueue.size();
     }
 
-    // ---- 故障队列 ----
+    // ---- 故障标记 ----
 
-    public void enqueueFault(ChargingOrder order) {
-        faultQueue(toPileType(order.getRequestMode())).add(order);
+    public void markFault(String pileId) {
+        faultedPiles.add(pileId);
     }
 
-    public int faultQueueSize(PileType type) {
-        return faultQueue(type).size();
-    }
-
-    public boolean hasFaults(PileType type) {
-        return !faultQueue(type).isEmpty();
+    public void clearFault(String pileId) {
+        faultedPiles.remove(pileId);
     }
 
     public boolean hasAnyFault() {
-        return !fastFaultQueue.isEmpty() || !slowFaultQueue.isEmpty();
+        return !faultedPiles.isEmpty();
     }
 
-    public ChargingOrder pollFault(PileType type) {
-        return faultQueue(type).poll();
+    /** 桩队列中首个订单（充电中）。 */
+    public ChargingOrder peekPileQueueHead(String pileId) {
+        return pileQueue(pileId).peekFirst();
     }
 
-    /** 查看故障队列头部订单但不移除。 */
-    public ChargingOrder peekFault(PileType type) {
-        return faultQueue(type).peek();
+    /** 从桩队列头部移除订单（用于故障期间将故障桩的排队车调走）。 */
+    public ChargingOrder pollFromPileQueueHead(String pileId) {
+        return pileQueue(pileId).pollFirst();
     }
 
     // ---- 桩前队列 ----
@@ -165,82 +152,35 @@ public class SchedulingEngine {
         return Optional.ofNullable(pq.peekFirst());
     }
 
-    /** 充电桩故障：将排队车辆移入故障队列，充电车由 fault() 的 enqueueFault 管理。 */
-    public List<ChargingOrder> onPileFaulted(String pileId, PileType pileType) {
-        Deque<ChargingOrder> pq = pileQueue(pileId);
-        Queue<ChargingOrder> fq = faultQueue(pileType);
-        List<ChargingOrder> moved = new ArrayList<>();
-        pq.pollFirst();
-        while (!pq.isEmpty()) {
-            moved.add(pq.pollFirst());
-        }
-        fq.addAll(moved);
-        return moved;
-    }
-
-    /** 从桩前队列取 position 0 的订单并移除（用于故障恢复后启动充电）。 */
-    public ChargingOrder pollFromPileQueue(String pileId) {
-        Deque<ChargingOrder> pq = pileQueue(pileId);
-        return pq.pollFirst();
-    }
     /** 从等候区移除指定车辆的订单。 */
     public boolean removeFromWait(String carId) {
         return fastWaitQueue.removeIf(o -> carId.equals(o.getCarId()))
                 || slowWaitQueue.removeIf(o -> carId.equals(o.getCarId()));
     }
 
-    public java.util.Queue<ChargingOrder> getFastWaitQueue() { return fastWaitQueue; }
-    public java.util.Queue<ChargingOrder> getSlowWaitQueue() { return slowWaitQueue; }
-    public java.util.Queue<ChargingOrder> getFastFaultQueue() { return fastFaultQueue; }
-    public java.util.Queue<ChargingOrder> getSlowFaultQueue() { return slowFaultQueue; }
-    /** 设置是否抑制 fillSlot 从等候区分发（边界步进有故障时暂缓）。 */
-    public void setDeferWaitDispatch(boolean v) { this.deferWaitDispatch = v; }
-
-    public void removeFromFaultQueues(String carId) {
-        fastFaultQueue.removeIf(o -> carId.equals(o.getCarId()));
-        slowFaultQueue.removeIf(o -> carId.equals(o.getCarId()));
-    }
-
-    /** 从所有桩前队列中移除指定车辆的订单。 */
     public void removeFromAllPileQueues(String carId) {
         for (var pq : pileQueues.values()) {
             pq.removeIf(o -> carId.equals(o.getCarId()));
         }
     }
-    @EventListener
-    public void onPileReleasedEvent(PileReleasedEvent event) {
-        onPileReleased(event.pileId(), event.pileType());
-    }
-    /** 从所有桩前队列中移除指定车辆的订单。 */
-    @EventListener
-    public void onPileRecoveredEvent(PileRecoveredEvent event) {
-        onPileReleased(event.pileId(), event.pileType());
-    }
+
+    public java.util.Queue<ChargingOrder> getFastWaitQueue() { return fastWaitQueue; }
+    public java.util.Queue<ChargingOrder> getSlowWaitQueue() { return slowWaitQueue; }
 
     // ---- 重建 ----
 
     /**
      * 清空并重建所有内存队列（启动时从 queue_entry 恢复后调用）。
-     *
-     * @param fastWait   快充等候区订单，按入队顺序
-     * @param slowWait   慢充等候区订单，按入队顺序
-     * @param fastFault  快充故障队列订单，按入队顺序
-     * @param slowFault  慢充故障队列订单，按入队顺序
-     * @param pileOrders 桩队列订单，按入队顺序，position 0 为第一个
      */
     public void rebuild(List<ChargingOrder> fastWait, List<ChargingOrder> slowWait,
-                        List<ChargingOrder> fastFault, List<ChargingOrder> slowFault,
                         Map<String, List<ChargingOrder>> pileOrders) {
         fastWaitQueue.clear();
         slowWaitQueue.clear();
-        fastFaultQueue.clear();
-        slowFaultQueue.clear();
         pileQueues.clear();
+        faultedPiles.clear();
 
         fastWaitQueue.addAll(fastWait);
         slowWaitQueue.addAll(slowWait);
-        fastFaultQueue.addAll(fastFault);
-        slowFaultQueue.addAll(slowFault);
 
         for (var entry : pileOrders.entrySet()) {
             Deque<ChargingOrder> pq = pileQueue(entry.getKey());
@@ -252,10 +192,6 @@ public class SchedulingEngine {
 
     private static PileType toPileType(RequestMode mode) {
         return mode == RequestMode.FAST ? PileType.FAST : PileType.SLOW;
-    }
-
-    private Queue<ChargingOrder> faultQueue(PileType type) {
-        return type == PileType.FAST ? fastFaultQueue : slowFaultQueue;
     }
 
     private Queue<ChargingOrder> waitQueue(PileType type) {

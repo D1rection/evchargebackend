@@ -49,8 +49,6 @@ public class QueueInitializer {
 
         List<ChargingOrder> fastWait = new ArrayList<>();
         List<ChargingOrder> slowWait = new ArrayList<>();
-        List<ChargingOrder> fastFault = new ArrayList<>();
-        List<ChargingOrder> slowFault = new ArrayList<>();
         Map<String, List<ChargingOrder>> pileOrders = new HashMap<>();
 
         for (QueueEntry entry : entries) {
@@ -62,18 +60,13 @@ public class QueueInitializer {
                     if ("FAST".equals(entry.getQueueKey())) fastWait.add(order);
                     else slowWait.add(order);
                 }
-                case "FAULT" -> {
-                    if ("FAST".equals(entry.getQueueKey())) fastFault.add(order);
-                    else slowFault.add(order);
-                }
                 case "PILE" -> pileOrders.computeIfAbsent(entry.getQueueKey(), k -> new ArrayList<>()).add(order);
             }
         }
 
-        engine.rebuild(fastWait, slowWait, fastFault, slowFault, pileOrders);
-        log.info("内存队列重建完成：等候区{}辆，故障队列{}辆，桩队列{}条",
+        engine.rebuild(fastWait, slowWait, pileOrders);
+        log.info("内存队列重建完成：等候区{}辆，桩队列{}条",
                 fastWait.size() + slowWait.size(),
-                fastFault.size() + slowFault.size(),
                 pileOrders.values().stream().mapToInt(List::size).sum());
     }
 }

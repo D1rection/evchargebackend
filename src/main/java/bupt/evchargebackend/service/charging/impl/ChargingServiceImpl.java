@@ -623,11 +623,18 @@ public class ChargingServiceImpl implements ChargingService {
             ChargingSession session = chargingSessionMapper.selectById(pile.getCurrentSessionId());
             if (session != null && session.getSessionStatus() == SessionStatus.CHARGING) {
                 BigDecimal remaining = session.getTargetKwh().subtract(session.getChargedKwh());
-                total += remaining.divide(power, 2, RoundingMode.HALF_UP)
-                        .multiply(BigDecimal.valueOf(60)).longValue();
+                if (remaining.compareTo(BigDecimal.ZERO) > 0) {
+                    total += remaining.divide(power, 2, RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(60)).longValue();
+                }
             }
         }
-        // 桩队列中等待的订单
+        // 桩队列中所有订单（含 position 0 —— 当前会话结束后的下一辆）
+        ChargingOrder pos0 = engine.peekPileQueue(pile.getPileId());
+        if (pos0 != null) {
+            total += pos0.getTargetKwh().divide(power, 2, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(60)).longValue();
+        }
         for (var order : engine.getPileQueue(pile.getPileId())) {
             total += order.getTargetKwh().divide(power, 2, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(60)).longValue();

@@ -409,12 +409,7 @@ public class ChargingServiceImpl implements ChargingService {
         order.setOrderStatus(OrderStatus.FINISHED);
         chargingOrderMapper.updateById(order);
 
-        // 8. 更新桩
-        pile.setWorkingState(WorkingState.AVAILABLE);
-        pile.setCurrentSessionId(null);
-        chargingPileMapper.updateById(pile);
-
-        // 9. 删 queue_entry + 引擎释放
+        // 8. 删 queue_entry + 引擎释放
         QueueEntry qe = queueEntryMapper.selectOne(
                 new QueryWrapper<QueueEntry>()
                         .eq("queue_type", "PILE")
@@ -426,9 +421,14 @@ public class ChargingServiceImpl implements ChargingService {
             queueEntryMapper.deleteById(qe.getId());
         }
         engine.onPileReleased(pileId, pileType);
-        tryFillFromWaiting(pileId, pileType);
 
-        // 10. 桩空闲后自动开始下一辆车
+        // 9. 更新桩（使 totalActiveMinutes 能正确计算）
+        pile.setWorkingState(WorkingState.AVAILABLE);
+        pile.setCurrentSessionId(null);
+        chargingPileMapper.updateById(pile);
+
+        // 10. 补位 + 自动开始
+        tryFillFromWaiting(pileId, pileType);
         tryAutoStartNextCar(pileId);
 
         ChargingEndResponse resp = new ChargingEndResponse();
@@ -824,7 +824,7 @@ public class ChargingServiceImpl implements ChargingService {
         FeeResult feeResult = calculateFees(power, target, session.getStartTime(), endTime, periods);
         long chargeMinutes = Duration.between(session.getStartTime(), endTime).toMinutes();
 
-        // 先清理队列，避免后续步骤异常导致队列残留
+        // 清理队列
         QueueEntry qe = queueEntryMapper.selectOne(
                 new QueryWrapper<QueueEntry>()
                         .eq("queue_type", "PILE")
@@ -834,7 +834,15 @@ public class ChargingServiceImpl implements ChargingService {
         );
         if (qe != null) queueEntryMapper.deleteById(qe.getId());
         engine.onPileReleased(pile.getPileId(), pileType);
+
+        // 先更新桩状态，使 totalActiveMinutes 能正确计算
+        pile.setWorkingState(WorkingState.AVAILABLE);
+        pile.setCurrentSessionId(null);
+        chargingPileMapper.updateById(pile);
+
+        // 补位（故障队列优先） + 自动开始
         tryFillFromWaiting(pile.getPileId(), pileType);
+        tryAutoStartNextCar(pile.getPileId());
 
         Bill bill = new Bill();
         bill.setBillId(UUID.randomUUID().toString());
@@ -860,12 +868,6 @@ public class ChargingServiceImpl implements ChargingService {
 
         order.setOrderStatus(OrderStatus.FINISHED);
         chargingOrderMapper.updateById(order);
-
-        pile.setWorkingState(WorkingState.AVAILABLE);
-        pile.setCurrentSessionId(null);
-        chargingPileMapper.updateById(pile);
-
-        tryAutoStartNextCar(pile.getPileId());
     }
 
     @Override

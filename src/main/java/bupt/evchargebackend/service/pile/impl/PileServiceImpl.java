@@ -6,11 +6,13 @@ import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.dto.pile.PileQueueItem;
 import bupt.evchargebackend.entity.charging.ChargingOrder;
 import bupt.evchargebackend.entity.charging.ChargingSession;
+import bupt.evchargebackend.entity.charging.enums.OrderStatus;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
 import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
 import bupt.evchargebackend.entity.user.Car;
+import bupt.evchargebackend.mapper.charging.ChargingOrderMapper;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
 import bupt.evchargebackend.mapper.user.CarMapper;
@@ -41,6 +43,7 @@ public class PileServiceImpl implements PileService {
     private final TimeProvider timeProvider;
     private final FaultRecordMapper faultRecordMapper;
     private final ChargingService chargingService;
+    private final ChargingOrderMapper chargingOrderMapper;
 
     public PileServiceImpl(ChargingPileMapper chargingPileMapper,
                            SchedulingEngine engine,
@@ -48,7 +51,8 @@ public class PileServiceImpl implements PileService {
                            CarMapper carMapper,
                            TimeProvider timeProvider,
                            FaultRecordMapper faultRecordMapper,
-                           ChargingService chargingService) {
+                           ChargingService chargingService,
+                           ChargingOrderMapper chargingOrderMapper) {
         this.chargingPileMapper = chargingPileMapper;
         this.engine = engine;
         this.chargingSessionMapper = chargingSessionMapper;
@@ -56,6 +60,7 @@ public class PileServiceImpl implements PileService {
         this.timeProvider = timeProvider;
         this.faultRecordMapper = faultRecordMapper;
         this.chargingService = chargingService;
+        this.chargingOrderMapper = chargingOrderMapper;
     }
 
     @Override
@@ -129,6 +134,13 @@ public class PileServiceImpl implements PileService {
                 session.setSessionStatus(SessionStatus.INTERRUPTED);
                 session.setEndTime(timeProvider.now());
                 chargingSessionMapper.updateById(session);
+                // 充电中的订单改为 CALLED 并入故障队列
+                ChargingOrder order = chargingOrderMapper.selectById(session.getOrderId());
+                if (order != null) {
+                    order.setOrderStatus(OrderStatus.CALLED);
+                    chargingOrderMapper.updateById(order);
+                    engine.enqueueFault(order);
+                }
             }
         }
 

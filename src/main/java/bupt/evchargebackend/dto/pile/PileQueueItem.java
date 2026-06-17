@@ -15,6 +15,8 @@ public class PileQueueItem {
 
     /** 车辆 ID */
     private String carId;
+    /** 车牌号 */
+    private String carNo;
     /** 电池容量 kWh */
     private BigDecimal carCapacity;
     /** 请求充电量 kWh */

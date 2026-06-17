@@ -215,6 +215,7 @@ public class PileServiceImpl implements PileService {
             if (car != null) {
                 PileQueueItem item = new PileQueueItem();
                 item.setCarId(head.getCarId());
+                item.setCarNo(car.getCarNo());
                 item.setCarCapacity(car.getBatteryCapacityKwh());
                 item.setRequestAmount(head.getTargetKwh());
                 item.setQueuePosition(0);
@@ -230,6 +231,7 @@ public class PileServiceImpl implements PileService {
             if (car != null) {
                 PileQueueItem item = new PileQueueItem();
                 item.setCarId(order.getCarId());
+                item.setCarNo(car.getCarNo());
                 item.setCarCapacity(car.getBatteryCapacityKwh());
                 item.setRequestAmount(order.getTargetKwh());
                 item.setQueuePosition(i + posBase);

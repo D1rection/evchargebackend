@@ -59,6 +59,7 @@ public class QueueServiceImpl implements QueueService {
 
             WaitingQueueItem item = new WaitingQueueItem();
             item.setCarId(order.getCarId());
+            item.setCarNo(car.getCarNo());
             item.setCarCapacity(car.getBatteryCapacityKwh());
             item.setRequestAmount(order.getTargetKwh());
             if (order.getCreatedAt() != null) {

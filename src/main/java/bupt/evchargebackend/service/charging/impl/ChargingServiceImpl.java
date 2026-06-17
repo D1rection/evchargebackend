@@ -757,9 +757,10 @@ public class ChargingServiceImpl implements ChargingService {
                         .last("LIMIT 1")
         ).stream().findFirst().orElse(null);
         // 从故障桩 deque 逐个取车，派到最优桩，派不出去就停
+        boolean faultEmpty = false;
         while (faultedPile != null) {
             ChargingOrder order = engine.pollFromPileQueueHead(faultedPile.getPileId());
-            if (order == null) break;
+            if (order == null) { faultEmpty = true; break; }
             String targetPile = dispatchToBestPile(order, pileType);
             if (targetPile == null) {
                 engine.setCharging(faultedPile.getPileId(), order);
@@ -767,7 +768,8 @@ public class ChargingServiceImpl implements ChargingService {
             }
             resumeInterruptedSession(order, targetPile);
         }
-        if (engine.hasAnyFault()) return; // 还有故障桩时跳过等候区
+        // 有故障但故障队列已空 → 可调度等候区
+        if (engine.hasAnyFault() && !faultEmpty) return;
         // 有任意故障 → 不调度等候区
         if (engine.hasAnyFault()) return;
 

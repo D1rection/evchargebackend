@@ -3,8 +3,9 @@ package bupt.evchargebackend.service.admin.impl;
 import bupt.evchargebackend.common.exception.BusinessException;
 import bupt.evchargebackend.common.response.Result;
 import bupt.evchargebackend.service.admin.AdminReportService;
-import cn.hutool.poi.excel.ExcelUtil;
-import cn.hutool.poi.excel.ExcelWriter;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 
@@ -105,27 +106,37 @@ public class AdminReportServiceImpl implements AdminReportService {
         headerMap.put("avgChargeDuration", "平均充电时长(分钟)");
         headerMap.put("faultRate", "故障率(%)");
 
-        try (ExcelWriter writer = ExcelUtil.getWriter(true);
+        try (XSSFWorkbook workbook = new XSSFWorkbook();
              ByteArrayOutputStream out = new ByteArrayOutputStream()) {
 
+            Sheet sheet = workbook.createSheet("报表");
+
             // 写表头
-            writer.writeCellValue(0, 0, "指标");
-            writer.writeCellValue(1, 0, "值");
+            Row headerRow = sheet.createRow(0);
+            headerRow.createCell(0).setCellValue("指标");
+            headerRow.createCell(1).setCellValue("值");
 
             // 写数据行
-            int row = 1;
+            int rowIdx = 1;
             for (Map.Entry<String, Object> entry : data.entrySet()) {
                 String label = headerMap.getOrDefault(entry.getKey(), entry.getKey());
-                writer.writeCellValue(0, row, label);
-                writer.writeCellValue(1, row, entry.getValue());
-                row++;
+                Row row = sheet.createRow(rowIdx);
+                row.createCell(0).setCellValue(label);
+
+                Object val = entry.getValue();
+                if (val instanceof Number num) {
+                    row.createCell(1).setCellValue(num.doubleValue());
+                } else {
+                    row.createCell(1).setCellValue(String.valueOf(val));
+                }
+                rowIdx++;
             }
 
-            // 设置列宽（单位：字符数）
-            writer.setColumnWidth(0, 20);
-            writer.setColumnWidth(1, 15);
+            // 设置列宽（单位：1/256 字符宽度）
+            sheet.setColumnWidth(0, 20 * 256);
+            sheet.setColumnWidth(1, 15 * 256);
 
-            writer.flush(out);
+            workbook.write(out);
             return out.toByteArray();
         } catch (Exception e) {
             throw new RuntimeException("导出 Excel 失败", e);

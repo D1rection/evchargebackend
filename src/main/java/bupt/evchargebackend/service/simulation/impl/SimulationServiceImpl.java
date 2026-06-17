@@ -189,11 +189,13 @@ public class SimulationServiceImpl implements SimulationService {
         return Result.success(state);
     }
 
-    private static Map<String, Object> queueItem(ChargingOrder o) {
+    private Map<String, Object> queueItem(ChargingOrder o) {
+        // 从DB重新加载订单（modifyAmount/modifyMode可能已修改）
+        ChargingOrder fresh = chargingOrderMapper.selectById(o.getOrderId());
         Map<String, Object> item = new LinkedHashMap<>();
         item.put("carId", o.getCarId());
-        item.put("requestAmount", o.getTargetKwh());
-        item.put("requestMode", o.getRequestMode().name());
+        item.put("requestAmount", fresh != null ? fresh.getTargetKwh() : o.getTargetKwh());
+        item.put("requestMode", fresh != null ? fresh.getRequestMode().name() : o.getRequestMode().name());
         return item;
     }
 

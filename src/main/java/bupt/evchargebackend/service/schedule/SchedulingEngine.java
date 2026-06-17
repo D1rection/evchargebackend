@@ -103,6 +103,11 @@ public class SchedulingEngine {
         return faultQueue(type).poll();
     }
 
+    /** 查看故障队列头部订单但不移除。 */
+    public ChargingOrder peekFault(PileType type) {
+        return faultQueue(type).peek();
+    }
+
     // ---- 桩前队列 ----
 
     public int pileQueueSize(String pileId) {

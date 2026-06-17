@@ -737,15 +737,13 @@ public class ChargingServiceImpl implements ChargingService {
     /** 桩释放后补位：先试故障队列（按最优桩选择），再试等候区。 */
     /** 桩释放后补位：先试故障队列（最优桩），再试等候区（最优桩）。 */
     private void tryFillFromWaiting(String pileId, PileType pileType) {
-        // 故障队列优先级高于等候区
+        // 故障队列优先级高于等候区（先 peek，派成功才 poll 移除）
         if (engine.hasFaults(pileType)) {
-            ChargingOrder faultOrder = engine.pollFault(pileType);
-            if (faultOrder != null) {
-                if (dispatchToBestPile(faultOrder, pileType) == null) {
-                    engine.enqueueFault(faultOrder);
-                }
-                return;
+            ChargingOrder faultHead = engine.peekFault(pileType);
+            if (faultHead != null && dispatchToBestPile(faultHead, pileType) != null) {
+                engine.pollFault(pileType);
             }
+            return;
         }
 
         String waitKey = pileType == PileType.FAST ? "FAST" : "SLOW";

@@ -768,10 +768,8 @@ public class ChargingServiceImpl implements ChargingService {
             }
             resumeInterruptedSession(order, targetPile);
         }
-        // 有故障但故障队列已空 → 可调度等候区
-        if (engine.hasAnyFault() && !faultEmpty) return;
-        // 有任意故障 → 不调度等候区
-        if (engine.hasAnyFault()) return;
+        // 有故障桩且队列还有车未派出 → 不调度等候区
+        if (faultedPile != null && !faultEmpty) return;
 
         String waitKey = pileType == PileType.FAST ? "FAST" : "SLOW";
         QueueEntry qe = queueEntryMapper.selectOne(

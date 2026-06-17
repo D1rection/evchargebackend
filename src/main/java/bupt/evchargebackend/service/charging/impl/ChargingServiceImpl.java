@@ -34,6 +34,7 @@ import bupt.evchargebackend.service.charging.ChargingService;
 import bupt.evchargebackend.common.time.TimeProvider;
 import bupt.evchargebackend.service.schedule.SchedulingEngine;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
+import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -650,6 +651,31 @@ public class ChargingServiceImpl implements ChargingService {
                     .multiply(BigDecimal.valueOf(60)).longValue();
         }
         return total;
+    }
+
+    /** 启动时恢复中断的自动结束定时器（服务重启后已存在的充电会话）。 */
+    @PostConstruct
+    public void recoverAutoFinishTimers() {
+        if (timeProvider.isSimulating()) return;
+        List<ChargingSession> active = chargingSessionMapper.selectList(
+                new QueryWrapper<ChargingSession>()
+                        .eq("session_status", SessionStatus.CHARGING)
+        );
+        for (var session : active) {
+            if (session.getStartTime() == null) continue;
+            ChargingPile pile = chargingPileMapper.selectById(session.getPileId());
+            if (pile == null) continue;
+            long elapsedMs = Duration.between(session.getStartTime(), timeProvider.now()).toMillis();
+            long totalMs = session.getTargetKwh()
+                    .divide(BigDecimal.valueOf(pile.getPowerKw()), 10, RoundingMode.HALF_UP)
+                    .multiply(BigDecimal.valueOf(3600_000))
+                    .longValue();
+            long remainingMs = Math.max(0, totalMs - elapsedMs);
+            log.warn("恢复自动结束定时器: sessionId={}, carId={}, pileId={}, 剩余{}ms",
+                    session.getSessionId(), session.getCarId(), session.getPileId(), remainingMs);
+            scheduler.schedule(() -> autoFinish(session.getSessionId()),
+                    remainingMs, TimeUnit.MILLISECONDS);
+        }
     }
 
     /** 开始充电：创建充电会话，更新桩状态和订单状态。 */

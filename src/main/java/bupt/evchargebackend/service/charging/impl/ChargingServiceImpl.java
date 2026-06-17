@@ -761,7 +761,7 @@ public class ChargingServiceImpl implements ChargingService {
             if (order != null) {
                 String targetPile = dispatchToBestPile(order, pileType);
                 if (targetPile == null) {
-                    engine.addToPileQueue(faultedPile.getPileId(), order);
+                    engine.setCharging(faultedPile.getPileId(), order);
                 } else {
                     resumeInterruptedSession(order, targetPile);
                 }

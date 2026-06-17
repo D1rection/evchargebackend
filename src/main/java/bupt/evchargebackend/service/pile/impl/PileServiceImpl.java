@@ -9,6 +9,7 @@ import bupt.evchargebackend.entity.charging.ChargingSession;
 import bupt.evchargebackend.entity.charging.enums.SessionStatus;
 import bupt.evchargebackend.entity.pile.ChargingPile;
 import bupt.evchargebackend.entity.pile.enums.PowerState;
+import bupt.evchargebackend.entity.pile.enums.PileType;
 import bupt.evchargebackend.entity.pile.enums.WorkingState;
 import bupt.evchargebackend.entity.user.Car;
 import bupt.evchargebackend.mapper.charging.ChargingSessionMapper;
@@ -167,6 +168,21 @@ public class PileServiceImpl implements PileService {
 
         // 触发补位 + 自动开始
         chargingService.onPileRecovered(pileId);
+
+        // 故障全部清除后，尝试从等候区派到所有空闲桩
+        if (!engine.hasAnyFault()) {
+            for (var pt : List.of(PileType.FAST, PileType.SLOW)) {
+                List<ChargingPile> avail = chargingPileMapper.selectList(
+                        new QueryWrapper<ChargingPile>()
+                                .eq("pile_type", pt)
+                                .eq("working_state", "AVAILABLE")
+                                .isNull("current_session_id")
+                );
+                for (var p : avail) {
+                    chargingService.onPileRecovered(p.getPileId());
+                }
+            }
+        }
     }
 
     @Override

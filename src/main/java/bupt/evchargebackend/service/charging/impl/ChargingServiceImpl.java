@@ -766,6 +766,9 @@ public class ChargingServiceImpl implements ChargingService {
         while (faultedPile != null) {
             ChargingOrder order = engine.pollFromPileQueueHead(faultedPile.getPileId());
             if (order == null) { faultEmpty = true; break; }
+            // 取走的是充电车 → 清空桩的 session 引用，避免恢复后 tryAutoStartNextCar 跳过
+            faultedPile.setCurrentSessionId(null);
+            chargingPileMapper.updateById(faultedPile);
             String targetPile = dispatchToBestPile(order, pileType);
             if (targetPile == null) {
                 engine.setCharging(faultedPile.getPileId(), order);

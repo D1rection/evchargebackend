@@ -36,6 +36,10 @@ public class Bill {
     /** 充电桩ID，外键 */
     private String pileId;
 
+    /** 充电桩编号（非表字段） */
+    @TableField(exist = false)
+    private String pileNo;
+
     /** 充电开始时间 */
     private LocalDateTime startTime;
 

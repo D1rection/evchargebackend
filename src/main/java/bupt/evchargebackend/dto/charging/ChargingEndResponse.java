@@ -13,4 +13,10 @@ public class ChargingEndResponse {
 
     /** 操作结果：1=成功，0=失败 */
     private Integer result;
+
+    /** 充电桩 ID */
+    private String pileId;
+
+    /** 充电桩编号 */
+    private String pileNo;
 }

@@ -439,6 +439,8 @@ public class ChargingServiceImpl implements ChargingService {
 
         ChargingEndResponse resp = new ChargingEndResponse();
         resp.setResult(1);
+        resp.setPileId(pile.getPileId());
+        resp.setPileNo(pile.getPileNo());
         return Result.success(resp);
     }
 

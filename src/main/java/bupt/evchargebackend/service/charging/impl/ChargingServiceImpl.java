@@ -771,7 +771,7 @@ public class ChargingServiceImpl implements ChargingService {
         }
     }
 
-    /** 尝试将订单派到最优桩（同类型中 totalActiveMinutes 最小者），仅试最优一个，队列满则返回null。 */
+    /** 尝试将订单派到最优桩（同类型中 totalActiveMinutes 最小者），仅设 CALLED，不触发 start（由 tryAutoStartNextCar 处理）。 */
     private String dispatchToBestPile(ChargingOrder order, PileType pileType) {
         ChargingPile best = chargingPileMapper.selectList(
                 new QueryWrapper<ChargingPile>()
@@ -785,10 +785,6 @@ public class ChargingServiceImpl implements ChargingService {
         order.setPileId(best.getPileId());
         chargingOrderMapper.updateById(order);
         insertQueueEntry("PILE", best.getPileId(), order.getOrderId());
-        if (best.getWorkingState() == WorkingState.AVAILABLE
-                && best.getCurrentSessionId() == null) {
-            startCharging(best, order);
-        }
         return best.getPileId();
     }
 

@@ -725,17 +725,16 @@ public class ChargingServiceImpl implements ChargingService {
     }
 
     /** 桩释放后补位：先试故障队列（按最优桩选择），再试等候区。 */
+    /** 桩释放后补位：先试故障队列（最优桩），再试等候区（最优桩）。 */
     private void tryFillFromWaiting(String pileId, PileType pileType) {
-        // 从故障队列取车，做最优桩选择
+        // 优先处理故障队列
         if (engine.hasFaults(pileType)) {
             ChargingOrder faultOrder = engine.pollFault(pileType);
             if (faultOrder != null) {
-                String selectedPile = dispatchToBestPile(faultOrder, pileType);
-                if (selectedPile == null) {
-                    // 最优桩队列已满，放回故障队列等待
+                if (dispatchToBestPile(faultOrder, pileType) == null) {
                     engine.enqueueFault(faultOrder);
                 }
-                return;  // 无论是否成功，处理完故障队列顶部的车就返回
+                return;
             }
         }
 
@@ -762,28 +761,25 @@ public class ChargingServiceImpl implements ChargingService {
         }
     }
 
-    /** 尝试将订单派到最优桩（同类型中 totalActiveMinutes 最小者），返回桩ID或null（队列满）。 */
+    /** 尝试将订单派到最优桩（同类型中 totalActiveMinutes 最小者），仅试最优一个，队列满则返回null。 */
     private String dispatchToBestPile(ChargingOrder order, PileType pileType) {
-        List<ChargingPile> piles = chargingPileMapper.selectList(
+        ChargingPile best = chargingPileMapper.selectList(
                 new QueryWrapper<ChargingPile>()
                         .eq("pile_type", pileType)
                         .in("working_state", "AVAILABLE", "CHARGING")
-        );
-        piles.sort(Comparator.comparingLong(this::totalActiveMinutes));
-        for (var pile : piles) {
-            if (engine.addToPileQueue(pile.getPileId(), order)) {
-                order.setOrderStatus(OrderStatus.CALLED);
-                order.setPileId(pile.getPileId());
-                chargingOrderMapper.updateById(order);
-                insertQueueEntry("PILE", pile.getPileId(), order.getOrderId());
-                if (pile.getWorkingState() == WorkingState.AVAILABLE
-                        && pile.getCurrentSessionId() == null) {
-                    startCharging(pile, order);
-                }
-                return pile.getPileId();
-            }
+        ).stream().min(Comparator.comparingLong(this::totalActiveMinutes)).orElse(null);
+        if (best == null) return null;
+        if (!engine.addToPileQueue(best.getPileId(), order)) return null;
+
+        order.setOrderStatus(OrderStatus.CALLED);
+        order.setPileId(best.getPileId());
+        chargingOrderMapper.updateById(order);
+        insertQueueEntry("PILE", best.getPileId(), order.getOrderId());
+        if (best.getWorkingState() == WorkingState.AVAILABLE
+                && best.getCurrentSessionId() == null) {
+            startCharging(best, order);
         }
-        return null;
+        return best.getPileId();
     }
 
     /** 桩空闲后自动开始下一辆车：桩 AVAILABLE 且队列 position 0 有 CALLED 订单则开始充电。 */

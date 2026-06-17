@@ -122,7 +122,7 @@ public class PileServiceImpl implements PileService {
         ChargingPile pile = requirePile(pileId);
         if (pile.getWorkingState() == WorkingState.FAULT) return;
 
-        // 中断当前充电（仅中断 session，订单保留 CHARGING 状态等待后续处理）
+        // 中断当前充电，充电车和排队车都移入故障队列
         if (pile.getCurrentSessionId() != null) {
             ChargingSession session = chargingSessionMapper.selectById(pile.getCurrentSessionId());
             if (session != null && session.getSessionStatus() == SessionStatus.CHARGING) {
@@ -132,7 +132,6 @@ public class PileServiceImpl implements PileService {
             }
         }
 
-        // 排队车辆移入故障队列
         engine.onPileFaulted(pileId, pile.getPileType());
 
         pile.setWorkingState(WorkingState.FAULT);

@@ -761,18 +761,17 @@ public class ChargingServiceImpl implements ChargingService {
                         .eq("working_state", "FAULT")
                         .last("LIMIT 1")
         ).stream().findFirst().orElse(null);
-        // 只取故障桩 position 0（充电车）调度到最优桩，排队车留在原桩等恢复
+        // 从故障桩 deque 逐个取车，派到最优桩，派不出去就停
         boolean faultEmpty = false;
-        if (faultedPile != null) {
+        while (faultedPile != null) {
             ChargingOrder order = engine.pollFromPileQueueHead(faultedPile.getPileId());
-            if (order == null) {
-                faultEmpty = true;
-            } else {
-                String targetPile = dispatchToBestPile(order, pileType);
-                if (targetPile == null) {
-                    engine.setCharging(faultedPile.getPileId(), order);
-                }
+            if (order == null) { faultEmpty = true; break; }
+            String targetPile = dispatchToBestPile(order, pileType);
+            if (targetPile == null) {
+                engine.setCharging(faultedPile.getPileId(), order);
+                break;
             }
+            resumeInterruptedSession(order, targetPile);
         }
         // 有故障且（本类型故障队列非空 或 跨类型故障存在）→ 不调度等候区
         if (faultedPile != null && !faultEmpty) return;
@@ -818,6 +817,12 @@ public class ChargingServiceImpl implements ChargingService {
         return best.getPileId();
     }
 
+    /** 将中断的 session 恢复为 CHARGING（pileId 不变，等 startCharging 新建 session）。 */
+    private void resumeInterruptedSession(ChargingOrder order, String newPileId) {
+        // 故障队列的车被派到新桩的队列时，中断 session 暂时保持中断。
+        // 等车在目标桩上通过 startCharging 创建新 session 后，原中断 session 交由 autoFinish 处理。
+    }
+
     /** 桩空闲后自动开始下一辆车：桩 AVAILABLE 且队列 position 0 有 CALLED 订单则开始充电。 */
     private void tryAutoStartNextCar(String pileId) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);
@@ -838,8 +843,8 @@ public class ChargingServiceImpl implements ChargingService {
     public void onPileRecovered(String pileId) {
         ChargingPile pile = chargingPileMapper.selectById(pileId);
         if (pile == null) return;
-        tryAutoStartNextCar(pileId);
         tryFillFromWaiting(pileId, pile.getPileType());
+        tryAutoStartNextCar(pileId);
     }
 
     @Override

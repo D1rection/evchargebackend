@@ -141,7 +141,9 @@ public class ChargingServiceImpl implements ChargingService {
         chargingOrderMapper.insert(order);
 
         // 6. 调度
-        dispatchOrder(order, pileType);
+        if (!dispatchOrder(order, pileType)) {
+            return Result.error(400, "等候区已满，无法提交申请");
+        }
 
         // 7. 组装响应
         OrderStatus status = order.getOrderStatus();
@@ -679,15 +681,22 @@ public class ChargingServiceImpl implements ChargingService {
         engine.setCharging(pile.getPileId(), order);
     }
 
-    /** 调度：查同类型桩 → 有空位入桩队列（空闲则 auto-start）→ 否则入等候区，同时计算预估。 */
-    private void dispatchOrder(ChargingOrder order, PileType pileType) {
+    private static final int MAX_WAITING_CAPACITY = 10;
+
+    /** 调度：查同类型桩 → 有空位入桩队列（空闲则 auto-start）→ 否则入等候区（满则丢弃），同时计算预估。 */
+    /** @return true 表示已派入桩队列或等候区，false 表示等候区满被丢弃 */
+    private boolean dispatchOrder(ChargingOrder order, PileType pileType) {
         String waitQueueKey = pileType == PileType.FAST ? "FAST" : "SLOW";
         String selectedPileId = null;
         ChargingPile bestPile = null;
 
         if (engine.hasAnyFault()) {
-            engine.enqueueWait(order);
-            insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
+            if (engine.totalWaitSize() < MAX_WAITING_CAPACITY) {
+                engine.enqueueWait(order);
+                insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
+            } else {
+                return false;
+            }
         } else {
             List<ChargingPile> piles = chargingPileMapper.selectList(
                     new QueryWrapper<ChargingPile>()
@@ -710,8 +719,12 @@ public class ChargingServiceImpl implements ChargingService {
                 }
             }
             if (selectedPileId == null) {
-                engine.enqueueWait(order);
-                insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
+                if (engine.totalWaitSize() < MAX_WAITING_CAPACITY) {
+                    engine.enqueueWait(order);
+                    insertQueueEntry("WAIT", waitQueueKey, order.getOrderId());
+                } else {
+                    return false;
+                }
             }
         }
 
@@ -732,6 +745,7 @@ public class ChargingServiceImpl implements ChargingService {
         order.setEstimatedFee(feeResult.chargeFee.add(feeResult.serviceFee).setScale(2, RoundingMode.HALF_UP));
         order.setEstimatedMinutes(estimatedMinutes);
         chargingOrderMapper.updateById(order);
+        return true;
     }
 
     /** 桩释放后补位：先试故障队列（按最优桩选择），再试等候区。 */

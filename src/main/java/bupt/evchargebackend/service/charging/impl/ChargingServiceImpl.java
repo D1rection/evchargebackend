@@ -618,10 +618,12 @@ public class ChargingServiceImpl implements ChargingService {
     private long totalActiveMinutes(ChargingPile pile) {
         BigDecimal power = BigDecimal.valueOf(pile.getPowerKw());
         long total = 0;
+        String sessionOrderId = null;
         // 当前充电会话的剩余时间
         if (pile.getCurrentSessionId() != null) {
             ChargingSession session = chargingSessionMapper.selectById(pile.getCurrentSessionId());
             if (session != null && session.getSessionStatus() == SessionStatus.CHARGING) {
+                sessionOrderId = session.getOrderId();
                 BigDecimal remaining = session.getTargetKwh().subtract(session.getChargedKwh());
                 if (remaining.compareTo(BigDecimal.ZERO) > 0) {
                     total += remaining.divide(power, 2, RoundingMode.HALF_UP)
@@ -629,12 +631,13 @@ public class ChargingServiceImpl implements ChargingService {
                 }
             }
         }
-        // 桩队列中所有订单（含 position 0 —— 当前会话结束后的下一辆）
+        // position 0：如果指向的不是当前充电车，则是下一辆待充电车
         ChargingOrder pos0 = engine.peekPileQueue(pile.getPileId());
-        if (pos0 != null) {
+        if (pos0 != null && !pos0.getOrderId().equals(sessionOrderId)) {
             total += pos0.getTargetKwh().divide(power, 2, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(60)).longValue();
         }
+        // position 1+
         for (var order : engine.getPileQueue(pile.getPileId())) {
             total += order.getTargetKwh().divide(power, 2, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(60)).longValue();

@@ -95,6 +95,23 @@ public class SchedulingEngine {
         return pileQueue(pileId).pollFirst();
     }
 
+    // ---- 兼容桩文件（空实现） ----
+
+    @Deprecated
+    public void setDeferWaitDispatch(boolean v) {}
+    @Deprecated
+    public void removeFromFaultQueues(String carId) {}
+    @Deprecated
+    public void enqueueFault(ChargingOrder order) {}
+    @Deprecated
+    public List<ChargingOrder> onPileFaulted(String pileId, PileType pileType) { return List.of(); }
+    @Deprecated
+    public boolean hasFaults(PileType type) { return false; }
+    @Deprecated
+    public ChargingOrder pollFault(PileType type) { return null; }
+    @Deprecated
+    public ChargingOrder pollFromPileQueue(String pileId) { return pileQueue(pileId).pollFirst(); }
+
     // ---- 桩前队列 ----
 
     public int pileQueueSize(String pileId) {

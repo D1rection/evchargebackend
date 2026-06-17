@@ -638,7 +638,7 @@ class ChargingServiceImplTest {
         doReturn(end).when(timeProvider).now();
         doReturn(mutableList(period("00:00", "24:00", "1.5", "5.0"))).when(billingRatePeriodMapper).selectList(any());
         doReturn(false).when(engine).hasAnyFault();
-        doReturn(waitEntry).when(queueEntryMapper).selectOne(any());
+        doReturn(null).doReturn(waitEntry).doReturn(null).when(queueEntryMapper).selectOne(any());
         doReturn(waitingOrder).when(chargingOrderMapper).selectById("wait-order-1");
         // 第一次查故障桩 → 空；第二次 dispatchToBestPile → 返回 F1
         doReturn(List.of()).doReturn(mutableList(createFastPile("F1"))).when(chargingPileMapper).selectList(any());

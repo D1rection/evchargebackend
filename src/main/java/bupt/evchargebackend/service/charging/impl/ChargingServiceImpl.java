@@ -759,15 +759,11 @@ public class ChargingServiceImpl implements ChargingService {
         if (faultedPile != null) {
             ChargingOrder order = engine.pollFromPileQueueHead(faultedPile.getPileId());
             if (order != null) {
-                if (engine.addToPileQueue(pileId, order)) {
-                    order.setOrderStatus(OrderStatus.CALLED);
-                    order.setPileId(pileId);
-                    chargingOrderMapper.updateById(order);
-                    insertQueueEntry("PILE", pileId, order.getOrderId());
-                    // 恢复中断的 session（充电车被调度到新桩时）
-                    resumeInterruptedSession(order, pileId);
-                } else {
+                String targetPile = dispatchToBestPile(order, pileType);
+                if (targetPile == null) {
                     engine.addToPileQueue(faultedPile.getPileId(), order);
+                } else {
+                    resumeInterruptedSession(order, targetPile);
                 }
             }
             return; // 有故障时不处理等候区

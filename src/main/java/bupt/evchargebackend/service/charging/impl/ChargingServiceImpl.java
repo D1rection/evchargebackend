@@ -756,18 +756,18 @@ public class ChargingServiceImpl implements ChargingService {
                         .eq("working_state", "FAULT")
                         .last("LIMIT 1")
         ).stream().findFirst().orElse(null);
-        if (faultedPile != null) {
+        // 从故障桩 deque 逐个取车，派到最优桩，派不出去就停
+        while (faultedPile != null) {
             ChargingOrder order = engine.pollFromPileQueueHead(faultedPile.getPileId());
-            if (order != null) {
-                String targetPile = dispatchToBestPile(order, pileType);
-                if (targetPile == null) {
-                    engine.setCharging(faultedPile.getPileId(), order);
-                } else {
-                    resumeInterruptedSession(order, targetPile);
-                }
+            if (order == null) break;
+            String targetPile = dispatchToBestPile(order, pileType);
+            if (targetPile == null) {
+                engine.setCharging(faultedPile.getPileId(), order);
+                break;
             }
-            return; // 有故障时不处理等候区
+            resumeInterruptedSession(order, targetPile);
         }
+        if (engine.hasAnyFault()) return; // 还有故障桩时跳过等候区
         // 有任意故障 → 不调度等候区
         if (engine.hasAnyFault()) return;
 

@@ -25,6 +25,8 @@ public class ChargingStateResponse {
     private String startTime;
     /** 已充电时长 HH:mm:ss */
     private String currentDuration;
+    /** 目标充电量 kWh */
+    private BigDecimal requestAmount;
     /** 当前累计充电量 kWh */
     private BigDecimal currentAmount;
     /** 当前电费（元） */
@@ -83,6 +85,14 @@ public class ChargingStateResponse {
 
     public void setCurrentDuration(String currentDuration) {
         this.currentDuration = currentDuration;
+    }
+
+    public BigDecimal getRequestAmount() {
+        return requestAmount;
+    }
+
+    public void setRequestAmount(BigDecimal requestAmount) {
+        this.requestAmount = requestAmount;
     }
 
     public BigDecimal getCurrentAmount() {

@@ -303,6 +303,7 @@ public class ChargingServiceImpl implements ChargingService {
         resp.setStartTime(session.getStartTime() != null
                 ? session.getStartTime().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
                 : null);
+        resp.setRequestAmount(session.getTargetKwh());
 
         // 4. 计算充电量和时长
         ChargingPile pile = chargingPileMapper.selectById(session.getPileId());

@@ -5,8 +5,10 @@ import bupt.evchargebackend.common.exception.ErrorCode;
 import bupt.evchargebackend.entity.bill.Bill;
 import bupt.evchargebackend.entity.bill.enums.PaymentStatus;
 import bupt.evchargebackend.entity.pile.ChargingPile;
+import bupt.evchargebackend.entity.user.Car;
 import bupt.evchargebackend.mapper.bill.BillMapper;
 import bupt.evchargebackend.mapper.pile.ChargingPileMapper;
+import bupt.evchargebackend.mapper.user.CarMapper;
 import bupt.evchargebackend.service.bill.BillService;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import org.springframework.stereotype.Service;
@@ -20,10 +22,13 @@ public class BillServiceImpl implements BillService {
 
     private final BillMapper billMapper;
     private final ChargingPileMapper chargingPileMapper;
+    private final CarMapper carMapper;
 
-    public BillServiceImpl(BillMapper billMapper, ChargingPileMapper chargingPileMapper) {
+    public BillServiceImpl(BillMapper billMapper, ChargingPileMapper chargingPileMapper,
+                           CarMapper carMapper) {
         this.billMapper = billMapper;
         this.chargingPileMapper = chargingPileMapper;
+        this.carMapper = carMapper;
     }
 
     @Override
@@ -39,6 +44,7 @@ public class BillServiceImpl implements BillService {
                         .orderByDesc("created_at")
         );
         bills.forEach(this::enrichPileNo);
+        bills.forEach(this::enrichCarNo);
         return bills;
     }
 
@@ -62,6 +68,7 @@ public class BillServiceImpl implements BillService {
             }
         }
         enrichPileNo(bill);
+        enrichCarNo(bill);
         return bill;
     }
 
@@ -74,6 +81,7 @@ public class BillServiceImpl implements BillService {
         bill.setPaymentStatus(PaymentStatus.PAID);
         billMapper.updateById(bill);
         enrichPileNo(bill);
+        enrichCarNo(bill);
         return bill;
     }
 
@@ -82,6 +90,15 @@ public class BillServiceImpl implements BillService {
             ChargingPile pile = chargingPileMapper.selectById(bill.getPileId());
             if (pile != null) {
                 bill.setPileNo(pile.getPileNo());
+            }
+        }
+    }
+
+    private void enrichCarNo(Bill bill) {
+        if (bill.getCarId() != null && bill.getCarNo() == null) {
+            Car car = carMapper.selectById(bill.getCarId());
+            if (car != null) {
+                bill.setCarNo(car.getCarNo());
             }
         }
     }

@@ -40,6 +40,10 @@ public class Bill {
     @TableField(exist = false)
     private String pileNo;
 
+    /** 车牌号（非表字段） */
+    @TableField(exist = false)
+    private String carNo;
+
     /** 充电开始时间 */
     private LocalDateTime startTime;
 
